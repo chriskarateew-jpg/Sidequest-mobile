@@ -1,0 +1,19 @@
+name = "sidequest-verify"
+main = "src/index.ts"
+compatibility_date = "2025-01-09"
+
+[observability]
+enabled = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "sidequest-db"
+database_id = "0abe22e3-2496-4765-9a9b-16e3691d6076"
+
+[[r2_buckets]]
+binding = "PHOTOS"
+bucket_name = "sidequest-photos"
+
+[[kv_namespaces]]
+binding = "RATE_LIMIT"
+id = "064424967fd74519afedc36b053e0379"

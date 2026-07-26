@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "sidequest-mobile",
-    "slug": "sidequest-mobile",
+    "name": "Gumption",
+    "slug": "gumption",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "sidequestmobile",
+    "scheme": "gumption",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon"
@@ -28,11 +28,24 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#F5F4F0",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
-      ]
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Gumption uses your camera to capture proof you completed a quest."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Gumption uses your location to suggest tasks tied to real places near you."
+        }
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,

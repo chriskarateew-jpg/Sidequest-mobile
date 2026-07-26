@@ -1,0 +1,15 @@
+{
+  "name": "sidequest-verify-server",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "secret:set-key": "wrangler secret put ANTHROPIC_API_KEY"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250109.0",
+    "typescript": "~5.9.2",
+    "wrangler": "^3.90.0"
+  }
+}

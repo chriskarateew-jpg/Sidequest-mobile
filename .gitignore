@@ -31,7 +31,15 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
 .env*.local
+
+# verification backend (server/)
+server/.dev.vars
+server/.wrangler/
+
+# run-sidequest-mobile skill — screenshots are ephemeral verification output
+.claude/skills/run-sidequest-mobile/screenshots/
 
 # typescript
 *.tsbuildinfo
