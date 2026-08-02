@@ -45,6 +45,40 @@ export function GroupsIcon({ size = 20, color = '#fff' }: IconProps) {
   );
 }
 
+export function RewardsIcon({ size = 20, color = '#fff' }: IconProps) {
+  return (
+    <Svg viewBox="0 0 24 24" width={size} height={size} fill="none">
+      <Rect x="3.5" y="8.5" width="17" height="4" rx="1" stroke={color} strokeWidth={2} strokeLinejoin="round" />
+      <Rect x="4.5" y="12.5" width="15" height="8" rx="1" stroke={color} strokeWidth={2} strokeLinejoin="round" />
+      <Path d="M12 8.5v12" stroke={color} strokeWidth={2} strokeLinecap="round" />
+      <Path
+        d="M12 8.5c-1-3-3-4.5-4.5-4.5A2 2 0 0 0 5.5 6c0 1.6 1.6 2.5 3 2.5"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M12 8.5c1-3 3-4.5 4.5-4.5A2 2 0 0 1 18.5 6c0 1.6-1.6 2.5-3 2.5"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+export function LockIcon({ size = 20, color = '#fff' }: IconProps) {
+  return (
+    <Svg viewBox="0 0 24 24" width={size} height={size} fill="none">
+      <Rect x="5" y="11" width="14" height="9" rx="2" stroke={color} strokeWidth={2} strokeLinejoin="round" />
+      <Path d="M8 11V7.5a4 4 0 0 1 8 0V11" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      <Circle cx="12" cy="15.2" r="1.4" fill={color} />
+    </Svg>
+  );
+}
+
 export function ProfileIcon({ size = 20, color = '#fff' }: IconProps) {
   return (
     <Svg viewBox="0 0 24 24" width={size} height={size} fill="none">

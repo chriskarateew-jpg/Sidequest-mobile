@@ -6,7 +6,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { FriendsIcon, GroupsIcon, ProfileIcon, TasksIcon } from '@/components/rail-icons';
+import { FriendsIcon, GroupsIcon, ProfileIcon, RewardsIcon, TasksIcon } from '@/components/rail-icons';
 import { Colors, Shadow, Spacing } from '@/constants/theme';
 
 // Height of the bar's own content, excluding the device's bottom safe-area
@@ -20,6 +20,7 @@ const TAB_ITEMS: { href: Href; Icon: ComponentType<{ size?: number; color?: stri
   { href: '/quests', Icon: TasksIcon, label: 'Tasks' },
   { href: '/friends', Icon: FriendsIcon, label: 'Friends' },
   { href: '/groups', Icon: GroupsIcon, label: 'Groups' },
+  { href: '/rewards', Icon: RewardsIcon, label: 'Rewards' },
   { href: '/profile', Icon: ProfileIcon, label: 'Profile' },
 ];
 

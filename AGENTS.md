@@ -27,6 +27,11 @@ Nothing that can fail should cache that failure permanently. A "not found" / "no
 - Any cache of a negative/failure/empty result needs its own (short) TTL, separate from — and shorter than — a success TTL. Never write `if (cached) return cached` without also checking whether the cached value represents success or failure.
 - When shipping a fix for a bug that could already be cached, stored, or otherwise persisted as a failure, explicitly check whether existing rows/state need clearing, or will naturally expire on their own — don't assume redeploying the code alone re-triggers everything downstream of it. Verify the fix against the real, previously-broken case, not just a fresh/never-cached one.
 
+# Writing style
+
+- Never use emojis in app UI. Where an emoji would otherwise mark a tab, button, or status (lock, coin, streak, etc.), draw a custom line-art SVG icon instead, matching the existing style in `src/components/rail-icons.tsx` (24x24 viewBox, ~2px stroke, no fill unless the mark needs a filled dot/circle).
+- Never use em dashes in user-facing app copy (UI text, toasts, challenge titles/descriptions) or in your own written prose to the user. Rewrite with a period, comma, or parentheses instead.
+
 # Working style
 
 The user wants proactive execution: if there's something you can just do yourself (run a command, install a dependency, fix a bug you noticed, apply a migration file you just wrote), do it rather than stopping to ask — don't leave follow-through steps for the user to run manually. This is a solo personal project; move fast.

@@ -73,6 +73,7 @@ export default function RootLayout() {
           <Stack.Screen name="completed" />
           <Stack.Screen name="friends" />
           <Stack.Screen name="groups" />
+          <Stack.Screen name="rewards" />
           <Stack.Screen name="profile" />
           <Stack.Screen name="submit-review" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         </Stack>

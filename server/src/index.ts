@@ -23,6 +23,7 @@ import { handleCreateGroup, handleGetGroup, handleJoinGroup, handleListMyGroups 
 import { CORS_HEADERS, error } from './http';
 import { handleGetLocalChallenges } from './local-challenges';
 import { handleCreatePot, handleGetPot, handleJoinPot, handleListGroupPots } from './pots';
+import { handleRewardsInterest } from './rewards';
 import { handleGetBalance } from './tokens';
 import { handleVerify } from './verify';
 
@@ -77,6 +78,7 @@ export default {
     if (groupMatch) return handleGetGroup(request, env, groupMatch[1]);
 
     if (method === 'GET' && pathname === '/tokens/me') return handleGetBalance(request, env);
+    if (method === 'POST' && pathname === '/rewards/interest') return handleRewardsInterest(request, env);
     if (method === 'GET' && pathname === '/local-challenges') return handleGetLocalChallenges(request, env);
 
     const createPotMatch = method === 'POST' ? pathname.match(/^\/groups\/([^/]+)\/pots$/) : null;
