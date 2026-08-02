@@ -1,4 +1,4 @@
-// Sidequest — quest photo verification. Takes a submitted photo + the
+// Gumpa — quest photo verification. Takes a submitted photo + the
 // quest's id and asks Claude whether the photo plausibly shows that quest
 // being completed right now. The title/desc used in the prompt are resolved
 // server-side from the trusted catalog (never from the client) — otherwise a

@@ -7,7 +7,7 @@ import { Colors, Radius, Spacing } from '@/constants/theme';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
 import { CHALLENGES } from '@/lib/data';
-import { useSidequestStore } from '@/lib/store';
+import { useGumpaStore } from '@/lib/store';
 import { useToastStore } from '@/lib/toast';
 
 interface FriendRow {
@@ -67,7 +67,7 @@ function FriendsContent({ token, myUserId, insetTop }: { token: string; myUserId
   const [duels, setDuels] = useState<DuelRow[]>([]);
   const [loading, setLoading] = useState(false);
   const show = useToastStore((s) => s.show);
-  const getSuggestions = useSidequestStore((s) => s.getSuggestions);
+  const getSuggestions = useGumpaStore((s) => s.getSuggestions);
 
   // The task pool eligible for a duel — today's assigned daily/weekly/monthly
   // challenges. These are currently the same set for every user (assignments
@@ -167,7 +167,7 @@ function FriendsContent({ token, myUserId, insetTop }: { token: string; myUserId
       show(data.error ?? 'Something went wrong.');
       return;
     }
-    if (accept) show('⚔️ Duel accepted — good luck!');
+    if (accept) show('⚔️ Duel accepted. Good luck!');
     loadDuels();
   };
 
@@ -197,7 +197,7 @@ function FriendsContent({ token, myUserId, insetTop }: { token: string; myUserId
         <View>
           <BackButton />
           <Text style={styles.pageTitle}>Friends</Text>
-          <Text style={styles.pageDesc}>See who's showing up this week — and nudge the ones who aren't.</Text>
+          <Text style={styles.pageDesc}>See who's showing up this week, and nudge the ones who aren't.</Text>
 
           <TextInput
             style={styles.input}
@@ -277,7 +277,7 @@ function FriendsContent({ token, myUserId, insetTop }: { token: string; myUserId
                         {iWon ? `+${d.wager * 2}` : 'Lost'}
                       </Text>
                     )}
-                    {d.status === 'expired' && <Text style={styles.duelStatusExpired}>Expired — refunded</Text>}
+                    {d.status === 'expired' && <Text style={styles.duelStatusExpired}>Expired, refunded</Text>}
                   </View>
                 );
               })}
@@ -343,7 +343,7 @@ function FriendsContent({ token, myUserId, insetTop }: { token: string; myUserId
           </View>
         </View>
       )}
-      ListEmptyComponent={<Text style={styles.empty}>No friends yet — search above to send a request.</Text>}
+      ListEmptyComponent={<Text style={styles.empty}>No friends yet. Search above to send a request.</Text>}
     />
   );
 }

@@ -39,7 +39,7 @@ export function htmlPage(bodyHtml: string): Response {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Gumption</title>
+  <title>Gumpa</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #F5F4F0; color: #111214; display: flex; min-height: 100vh; align-items: center; justify-content: center; margin: 0; padding: 24px; }
     .card { background: #fff; border-radius: 18px; padding: 32px; max-width: 380px; width: 100%; box-shadow: 0 2px 10px rgba(17,18,20,0.08); text-align: center; }

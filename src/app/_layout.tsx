@@ -4,22 +4,24 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthGateway } from '@/components/auth-gateway';
+import { AvatarOnboarding } from '@/components/avatar-onboarding';
 import { LocationOnboarding } from '@/components/location-onboarding';
 import { ToastHost } from '@/components/toast-host';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
-import { useSidequestStore } from '@/lib/store';
+import { useGumpaStore } from '@/lib/store';
 
 export default function RootLayout() {
-  const hydrate = useSidequestStore((s) => s.hydrate);
-  const hydrated = useSidequestStore((s) => s.hydrated);
-  const syncTokens = useSidequestStore((s) => s.syncTokens);
-  const refreshLocalChallenges = useSidequestStore((s) => s.refreshLocalChallenges);
-  const localChallengesFetchedAt = useSidequestStore((s) => s.localChallengesFetchedAt);
-  const locationOptOut = useSidequestStore((s) => s.locationOptOut);
+  const hydrate = useGumpaStore((s) => s.hydrate);
+  const hydrated = useGumpaStore((s) => s.hydrated);
+  const syncTokens = useGumpaStore((s) => s.syncTokens);
+  const refreshLocalChallenges = useGumpaStore((s) => s.refreshLocalChallenges);
+  const localChallengesFetchedAt = useGumpaStore((s) => s.localChallengesFetchedAt);
+  const locationOptOut = useGumpaStore((s) => s.locationOptOut);
   const hydrateAuth = useAuthStore((s) => s.hydrate);
   const authHydrated = useAuthStore((s) => s.hydrated);
   const token = useAuthStore((s) => s.token);
+  const justSignedUp = useAuthStore((s) => s.justSignedUp);
 
   useEffect(() => {
     hydrate();
@@ -48,15 +50,18 @@ export default function RootLayout() {
   // null) or explicitly opted out are left alone.
   useEffect(() => {
     if (!token || !hydrated) return;
-    const s = useSidequestStore.getState();
+    const s = useGumpaStore.getState();
     if (s.localChallengesFetchedAt !== null && !s.locationOptOut) refreshLocalChallenges();
   }, [token, hydrated, refreshLocalChallenges]);
 
   if (!authHydrated) return null;
 
-  // First thing a brand-new session sees, on top of the feed — not something
-  // that only surfaces if the user happens to scroll into the Tasks tab.
-  const showLocationOnboarding = !!token && hydrated && localChallengesFetchedAt === null && !locationOptOut;
+  // Onboarding order after a fresh signup: profile picture first (it's part
+  // of account creation), then location — showLocationOnboarding waits on
+  // !justSignedUp so the two modals never stack. A returning login never
+  // sets justSignedUp, so this has no effect outside a brand-new signup.
+  const showAvatarOnboarding = !!token && hydrated && justSignedUp;
+  const showLocationOnboarding = !!token && hydrated && !justSignedUp && localChallengesFetchedAt === null && !locationOptOut;
 
   return (
     <SafeAreaProvider>
@@ -65,13 +70,16 @@ export default function RootLayout() {
         <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
           <Stack.Screen name="index" options={{ animation: 'none' }} />
           <Stack.Screen name="quests" />
+          <Stack.Screen name="completed" />
           <Stack.Screen name="friends" />
           <Stack.Screen name="groups" />
           <Stack.Screen name="profile" />
+          <Stack.Screen name="submit-review" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         </Stack>
       ) : (
         <AuthGateway />
       )}
+      <AvatarOnboarding visible={showAvatarOnboarding} />
       <LocationOnboarding visible={showLocationOnboarding} />
       <ToastHost />
     </SafeAreaProvider>

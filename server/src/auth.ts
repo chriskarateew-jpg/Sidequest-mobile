@@ -12,6 +12,7 @@ interface UserRow {
   password_salt: string;
   is_public: number;
   email_verified: number;
+  avatar_key: string | null;
 }
 
 interface TokenRow {
@@ -24,13 +25,14 @@ interface TokenRow {
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
 const RESET_TOKEN_RE = /^[0-9a-f]{48}$/;
 
-function userSummary(row: Pick<UserRow, 'id' | 'username' | 'email' | 'is_public' | 'email_verified'>) {
+function userSummary(row: Pick<UserRow, 'id' | 'username' | 'email' | 'is_public' | 'email_verified' | 'avatar_key'>) {
   return {
     id: row.id,
     username: row.username,
     email: row.email,
     isPublic: !!row.is_public,
     emailVerified: !!row.email_verified,
+    avatarKey: row.avatar_key,
   };
 }
 
@@ -82,7 +84,7 @@ export async function handleSignup(request: Request, env: Env): Promise<Response
   await issueAndSendVerification(env, request, id, email);
 
   const token = await signToken({ sub: id, username }, env.JWT_SECRET);
-  return json({ token, user: { id, username, email, isPublic: false, emailVerified: false } });
+  return json({ token, user: { id, username, email, isPublic: false, emailVerified: false, avatarKey: null } });
 }
 
 export async function handleLogin(request: Request, env: Env): Promise<Response> {
@@ -115,9 +117,9 @@ export async function handleMe(request: Request, env: Env): Promise<Response> {
   const auth = await requireAuth(request, env);
   if (!auth) return error('Not authenticated', 401);
 
-  const row = await env.DB.prepare('SELECT id, username, email, is_public, email_verified FROM users WHERE id = ?')
+  const row = await env.DB.prepare('SELECT id, username, email, is_public, email_verified, avatar_key FROM users WHERE id = ?')
     .bind(auth.id)
-    .first<Pick<UserRow, 'id' | 'username' | 'email' | 'is_public' | 'email_verified'>>();
+    .first<Pick<UserRow, 'id' | 'username' | 'email' | 'is_public' | 'email_verified' | 'avatar_key'>>();
   if (!row) return error('User not found', 404);
 
   return json({ user: userSummary(row) });
@@ -148,7 +150,7 @@ export async function handleVerifyEmail(request: Request, env: Env): Promise<Res
 
   if (!row || row.used_at || row.expires_at < Date.now()) {
     return htmlPage(
-      '<h1>Link expired</h1><p>This verification link is invalid or has expired. Request a new one from the Gumption app.</p>'
+      '<h1>Link expired</h1><p>This verification link is invalid or has expired. Request a new one from the Gumpa app.</p>'
     );
   }
 
@@ -157,7 +159,7 @@ export async function handleVerifyEmail(request: Request, env: Env): Promise<Res
     env.DB.prepare('UPDATE auth_tokens SET used_at = ? WHERE id = ?').bind(Date.now(), row.id),
   ]);
 
-  return htmlPage('<h1>Email verified</h1><p>You can go back to the Gumption app now.</p>');
+  return htmlPage('<h1>Email verified</h1><p>You can go back to the Gumpa app now.</p>');
 }
 
 export async function handleResendVerification(request: Request, env: Env): Promise<Response> {
@@ -215,7 +217,7 @@ export function handleResetPasswordPage(request: Request): Response {
 
   return htmlPage(`
     <h1>Set a new password</h1>
-    <p>Choose a new password for your Gumption account.</p>
+    <p>Choose a new password for your Gumpa account.</p>
     <input id="pw" type="password" placeholder="New password (min 8 characters)" />
     <button onclick="submitReset()">Reset password</button>
     <div id="msg" class="msg"></div>

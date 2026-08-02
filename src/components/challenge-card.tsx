@@ -1,20 +1,72 @@
 import { Image } from 'expo-image';
+import { router } from 'expo-router';
+import type * as MediaLibrary from 'expo-media-library';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { LocalBarrierBorder } from '@/components/local-barrier';
+import { CameraIcon, CoinIcon, ScreenshotIcon } from '@/components/rail-icons';
+import { ScreenshotPicker } from '@/components/screenshot-picker';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useAuthStore } from '@/lib/auth';
-import { submitCompletion, type CompleteResult } from '@/lib/complete';
-import type { Challenge } from '@/lib/data';
-import { capturePhoto } from '@/lib/photo';
-import { periodKeyFor, useSidequestStore } from '@/lib/store';
+import { reconcileSubmission, submitCompletion } from '@/lib/complete';
+import type { Cadence, Challenge } from '@/lib/data';
+import { useDraftSubmissionStore } from '@/lib/draft-submission';
+import { capturePhoto, resolveScreenshotAsset, type PhotoResult } from '@/lib/photo';
+import { periodKeyFor, useGumpaStore } from '@/lib/store';
 import { useToastStore } from '@/lib/toast';
 import { verifyPhoto } from '@/lib/verify';
 
+type ResolvedPhoto = Extract<PhotoResult, { status: 'ok' }>;
+
 export const CADENCE_LABEL = { daily: 'TODAY', weekly: 'THIS WEEK', monthly: 'THIS MONTH' } as const;
+// Short form for the per-card corner badge — CADENCE_LABEL above stays as
+// is since it also feeds inline sentences ("2/3 this week 🔥") where the
+// shouty all-caps form doesn't fit.
+const CADENCE_SHORT_LABEL: Record<Cadence, string> = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly' };
 
 type Stage = 'idle' | 'capturing' | 'verifying' | 'submitting';
-const MAX_CAPTION_LENGTH = 240;
+
+// Shared with completed.tsx's CompletedPostCard so every task card — active
+// or completed — marks its cadence and reward the same way.
+export function CadenceBadge({ cadence }: { cadence: Cadence }) {
+  return (
+    <View style={badgeStyles.badge}>
+      <Text style={badgeStyles.text}>{CADENCE_SHORT_LABEL[cadence]}</Text>
+    </View>
+  );
+}
+
+export function RewardPill({ tokens }: { tokens: number }) {
+  return (
+    <View style={badgeStyles.rewardPill}>
+      <CoinIcon size={15} color={Colors.goldText} />
+      <Text style={badgeStyles.rewardText}>+{tokens}</Text>
+    </View>
+  );
+}
+
+const badgeStyles = StyleSheet.create({
+  badge: {
+    backgroundColor: Colors.accentSoft,
+    borderRadius: Radius.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  text: { fontSize: 11, fontWeight: '800', color: Colors.accent, letterSpacing: 0.2 },
+  // A chip, not bare text — visibly bigger reward area than a plain "+75 🪙"
+  // line, so the payoff reads as a distinct, weighted piece of the card.
+  rewardPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.goldSoft,
+    borderRadius: Radius.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  rewardText: { fontWeight: '800', color: Colors.goldText, fontSize: 16 },
+});
 
 export function ChallengeCard({ challenge }: { challenge: Challenge }) {
   const completionKey = `${challenge.id}:${periodKeyFor(challenge.cadence)}`;
@@ -22,36 +74,26 @@ export function ChallengeCard({ challenge }: { challenge: Challenge }) {
   // card re-renders on its own when completions change — selecting a
   // store *function* never triggers a re-render, since the function
   // reference itself is stable across state updates.
-  const completion = useSidequestStore((s) => s.completions[completionKey]);
-  const completePhoto = useSidequestStore((s) => s.completePhoto);
-  const logStreakPhoto = useSidequestStore((s) => s.logStreakPhoto);
+  const completion = useGumpaStore((s) => s.completions[completionKey]);
+  const logStreakPhoto = useGumpaStore((s) => s.logStreakPhoto);
   const authToken = useAuthStore((s) => s.token);
   const show = useToastStore((s) => s.show);
   const [stage, setStage] = useState<Stage>('idle');
-  const [caption, setCaption] = useState('');
+  const [screenshotPickerVisible, setScreenshotPickerVisible] = useState(false);
 
   const done = completion?.status === 'complete';
   const busy = stage !== 'idle';
-  const isLocal = !!challenge.bgImage;
-
-  const syncAfterSubmit = async (submit: () => Promise<CompleteResult | null>) => {
-    const result = await submit();
-    if (!result) return;
-    if (typeof result.tokens === 'number') useSidequestStore.getState().syncTokens(result.tokens);
-    useSidequestStore.getState().syncCompletion(challenge.id, periodKeyFor(challenge.cadence), result.completion);
-  };
+  // The outline/glow marks any real-place challenge, whether or not a city
+  // photo happened to be fetched for it — bgImage is a bonus, not the signal.
+  const isLocal = !!challenge.isLocal;
 
   // Every challenge is photo-verified — 'streak' just spreads that across
   // several check-ins (one per calendar day) instead of completing outright.
-  const handlePhotoComplete = async () => {
+  // Shared by both proof paths (live camera / screenshot picker) — the two
+  // capture entry points below just resolve a photo and hand it here.
+  const submitPhoto = async (photo: ResolvedPhoto) => {
     setStage('capturing');
     try {
-      const photo = await capturePhoto();
-      if (photo.status === 'denied') {
-        show('Camera access is required to submit proof.');
-        return;
-      }
-      if (photo.status === 'cancelled') return;
       if (!authToken) {
         show('Log in to submit photo proof.');
         return;
@@ -70,67 +112,97 @@ export function ChallengeCard({ challenge }: { challenge: Challenge }) {
         return;
       }
       if (verdict.status === 'error') {
-        show("Couldn't verify that photo — check your connection and try again.");
+        show("Couldn't verify that photo. Check your connection and try again.");
+        return;
+      }
+
+      // A streak check-in that finishes the streak (or any non-streak
+      // challenge, which always completes in one shot) hands off to the
+      // review screen instead of posting immediately — the user gets a
+      // chance to add a description and star rating and see the photo
+      // before it's final. A streak check-in that's still in progress has
+      // no post/coins/review involved yet, so it still commits right away.
+      const willComplete = challenge.verify !== 'streak' || (completion?.progress ?? 0) + 1 >= (challenge.streakTarget ?? Infinity);
+      if (willComplete) {
+        useDraftSubmissionStore.getState().setPending({
+          challenge,
+          photoUri: photo.uri,
+          photoBase64: photo.base64,
+          mediaType: photo.mediaType,
+          photoProof: verdict.photoProof,
+          hashThumbnailBase64: photo.hashThumbnailBase64,
+          lat: photo.lat,
+          lng: photo.lng,
+        });
+        router.push('/submit-review');
         return;
       }
 
       setStage('submitting');
-      const submittedCaption = caption.trim();
-      setCaption('');
-
-      if (challenge.verify === 'streak') {
-        const result = logStreakPhoto(challenge.id, photo.uri);
-        if (!result) {
-          show('Already logged today — come back tomorrow.');
-          return;
-        }
-        show(
-          result.justCompleted
-            ? `+${result.challenge.tokens} 🪙  ${result.challenge.title} — streak complete!`
-            : `Logged! ${result.progress}/${result.target} ${CADENCE_LABEL[result.challenge.cadence].toLowerCase()} 🔥`
-        );
-        await syncAfterSubmit(() =>
-          submitCompletion({
-            token: authToken,
-            challengeId: challenge.id,
-            photoBase64: photo.base64,
-            mediaType: photo.mediaType,
-            photoProof: verdict.photoProof,
-            caption: submittedCaption || undefined,
-          })
-        );
-      } else {
-        const c = completePhoto(challenge.id, photo.uri);
-        if (c) {
-          show(`+${c.tokens} 🪙  ${c.title} — proof logged!`);
-          await syncAfterSubmit(() =>
-            submitCompletion({
-              token: authToken,
-              challengeId: c.id,
-              photoBase64: photo.base64,
-              mediaType: photo.mediaType,
-              photoProof: verdict.photoProof,
-              caption: submittedCaption || undefined,
-            })
-          );
-        }
+      const result = logStreakPhoto(challenge.id, photo.uri);
+      if (!result) {
+        show('Already logged today. Come back tomorrow.');
+        return;
       }
+      show(`Logged! ${result.progress}/${result.target} ${CADENCE_LABEL[result.challenge.cadence].toLowerCase()} 🔥`);
+      const outcome = await reconcileSubmission(challenge, () =>
+        submitCompletion({
+          token: authToken,
+          challengeId: challenge.id,
+          photoBase64: photo.base64,
+          mediaType: photo.mediaType,
+          photoProof: verdict.photoProof,
+          hashThumbnailBase64: photo.hashThumbnailBase64,
+          lat: photo.lat,
+          lng: photo.lng,
+        })
+      );
+      // A deliberate server-side refusal (duplicate photo, location mismatch) —
+      // reconcileSubmission above already rolled back whatever was applied
+      // optimistically to the server's authoritative state; surface why so
+      // it doesn't look like the tap just silently did nothing.
+      if (outcome.status === 'rejected') show(`❌ ${outcome.reason}`);
     } finally {
       setStage('idle');
     }
   };
 
+  const handleCameraCapture = async () => {
+    const photo = await capturePhoto();
+    if (photo.status === 'denied') {
+      show('Camera access is required to submit proof.');
+      return;
+    }
+    if (photo.status === 'cancelled') return;
+    await submitPhoto(photo);
+  };
+
+  const handleScreenshotSelect = async (asset: MediaLibrary.Asset) => {
+    setScreenshotPickerVisible(false);
+    setStage('capturing');
+    const photo = await resolveScreenshotAsset(asset);
+    if (photo.status !== 'ok') {
+      setStage('idle');
+      return;
+    }
+    await submitPhoto(photo);
+  };
+
   return (
+    <>
     <View style={[styles.cardShadow, isLocal && styles.cardShadowLocal, done && styles.cardDone]}>
       <View style={[styles.card, isLocal && styles.cardLocal]}>
-        {isLocal && (
+        {challenge.bgImage && (
           <>
             <Image source={{ uri: challenge.bgImage }} style={styles.cardBgImage} contentFit="cover" />
             <View style={styles.cardScrim} />
           </>
         )}
-        <Text style={[styles.cadence, isLocal && styles.cadenceLocal]}>{CADENCE_LABEL[challenge.cadence]}</Text>
-        <Text style={[styles.title, isLocal && styles.titleLocal]}>{challenge.title}</Text>
+        {isLocal && <LocalBarrierBorder radius={Radius.card} />}
+        <View style={styles.header}>
+          <Text style={[styles.title, styles.titleFlex, isLocal && styles.titleLocal]}>{challenge.title}</Text>
+          <CadenceBadge cadence={challenge.cadence} />
+        </View>
         <Text style={[styles.desc, isLocal && styles.descLocal]}>{challenge.desc}</Text>
 
         {challenge.verify === 'streak' && !done && (
@@ -139,41 +211,96 @@ export function ChallengeCard({ challenge }: { challenge: Challenge }) {
           </Text>
         )}
 
-        {!done && (
-          <TextInput
-            style={[styles.captionInput, isLocal && styles.captionInputLocal]}
-            placeholder="Add a note (optional)"
-            placeholderTextColor={isLocal ? 'rgba(255,255,255,0.6)' : Colors.muted}
-            value={caption}
-            onChangeText={setCaption}
-            maxLength={MAX_CAPTION_LENGTH}
-            editable={!busy}
-          />
-        )}
-
-        <View style={styles.bottom}>
-          <Text style={styles.reward}>+{challenge.tokens} 🪙</Text>
-          {done ? (
+        {done ? (
+          <View style={styles.bottom}>
+            <RewardPill tokens={challenge.tokens} />
             <Text style={styles.doneLabel}>{challenge.verify === 'streak' ? '✓ Streak complete' : '✓ Proof submitted'}</Text>
-          ) : (
-            <Pressable
-              style={[styles.btn, styles.btnPrimary, busy && styles.btnDisabled]}
-              disabled={busy}
-              onPress={handlePhotoComplete}>
-              {stage === 'verifying' ? (
-                <Text style={styles.btnPrimaryText}>Verifying…</Text>
-              ) : busy ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : challenge.verify === 'streak' ? (
-                <Text style={styles.btnPrimaryText}>📸 Log today</Text>
-              ) : (
-                <Text style={styles.btnPrimaryText}>📸 Complete</Text>
+          </View>
+        ) : challenge.proofType === 'either' ? (
+          // Two submission methods don't fit comfortably alongside the
+          // reward pill on one line — give the pill its own row and let
+          // both buttons split the full width evenly below, instead of
+          // squeezing three elements into one crowded row.
+          <View style={styles.bottomStacked}>
+            <RewardPill tokens={challenge.tokens} />
+            <View style={styles.actionRowFull}>
+              <Pressable
+                style={[styles.btn, styles.btnPrimary, styles.btnFlex, busy && styles.btnDisabled]}
+                disabled={busy}
+                onPress={handleCameraCapture}>
+                {stage === 'verifying' ? (
+                  <Text style={styles.btnPrimaryText}>Verifying…</Text>
+                ) : busy ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <View style={styles.btnContent}>
+                    <CameraIcon size={15} />
+                    <Text style={styles.btnPrimaryText}>{challenge.verify === 'streak' ? 'Log today' : 'Complete'}</Text>
+                  </View>
+                )}
+              </Pressable>
+              <Pressable
+                style={[styles.btn, styles.btnPrimary, styles.btnFlex, busy && styles.btnDisabled]}
+                disabled={busy}
+                onPress={() => setScreenshotPickerVisible(true)}>
+                {stage === 'verifying' ? (
+                  <Text style={styles.btnPrimaryText}>Verifying…</Text>
+                ) : busy ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <View style={styles.btnContent}>
+                    <ScreenshotIcon size={15} />
+                    <Text style={styles.btnPrimaryText}>Screenshot</Text>
+                  </View>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.bottom}>
+            <RewardPill tokens={challenge.tokens} />
+            <View style={styles.actionRow}>
+              {challenge.proofType === 'camera' && (
+                <Pressable
+                  style={[styles.btn, styles.btnPrimary, busy && styles.btnDisabled]}
+                  disabled={busy}
+                  onPress={handleCameraCapture}>
+                  {stage === 'verifying' ? (
+                    <Text style={styles.btnPrimaryText}>Verifying…</Text>
+                  ) : busy ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <View style={styles.btnContent}>
+                      <CameraIcon size={15} />
+                      <Text style={styles.btnPrimaryText}>{challenge.verify === 'streak' ? 'Log today' : 'Complete'}</Text>
+                    </View>
+                  )}
+                </Pressable>
               )}
-            </Pressable>
-          )}
-        </View>
+              {challenge.proofType === 'screenshot' && (
+                <Pressable
+                  style={[styles.btn, styles.btnPrimary, busy && styles.btnDisabled]}
+                  disabled={busy}
+                  onPress={() => setScreenshotPickerVisible(true)}>
+                  {stage === 'verifying' ? (
+                    <Text style={styles.btnPrimaryText}>Verifying…</Text>
+                  ) : busy ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <View style={styles.btnContent}>
+                      <ScreenshotIcon size={15} />
+                      <Text style={styles.btnPrimaryText}>Screenshot</Text>
+                    </View>
+                  )}
+                </Pressable>
+              )}
+            </View>
+          </View>
+        )}
       </View>
     </View>
+    <ScreenshotPicker visible={screenshotPickerVisible} onClose={() => setScreenshotPickerVisible(false)} onSelect={handleScreenshotSelect} />
+    </>
   );
 }
 
@@ -184,10 +311,11 @@ const styles = StyleSheet.create({
   // same view clip the shadow away on iOS.
   cardShadow: { borderRadius: Radius.card, ...Shadow },
   // Location-tied cards get a colored glow instead of the plain neutral
-  // shadow, on top of the solid outline below — two reinforcing signals
-  // (not one) so a real-place task reads as distinct at a glance among a
-  // list of ordinary cards.
-  cardShadowLocal: { shadowColor: Colors.localAccent, shadowOpacity: 0.45, shadowRadius: 12 },
+  // shadow, on top of the animated barrier stripe below — two reinforcing
+  // signals (not one) so a real-place task reads as distinct at a glance
+  // among a list of ordinary cards. Same brand blue as the barrier itself,
+  // not a separate accent color.
+  cardShadowLocal: { shadowColor: Colors.accent, shadowOpacity: 0.35, shadowRadius: 12 },
   card: {
     backgroundColor: Colors.card,
     borderRadius: Radius.card,
@@ -198,39 +326,32 @@ const styles = StyleSheet.create({
   // Local (location-tied) challenges drop the white card background in favor
   // of the fetched city image, shown faded rather than as a barely-visible
   // watermark, with a dark scrim underneath the text so it stays legible
-  // over a photo of unknown brightness. The solid outline is the primary
-  // "this is a real nearby place" signal, distinct from ordinary brand-accent use.
-  cardLocal: { backgroundColor: Colors.ink, borderWidth: 2.5, borderColor: Colors.localAccent },
+  // over a photo of unknown brightness. The animated barrier (see
+  // LocalBarrierBorder) is the primary "this is a real nearby place" signal.
+  cardLocal: { backgroundColor: Colors.ink },
   cardBgImage: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.55 },
   cardScrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(17,18,20,0.4)' },
   cardDone: { opacity: 0.6 },
-  cadence: { fontSize: 10.5, fontWeight: '800', color: Colors.muted, letterSpacing: 0.5 },
-  cadenceLocal: { color: 'rgba(255,255,255,0.75)' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: Spacing.two },
   title: { fontSize: 16, fontWeight: '800', color: Colors.ink, lineHeight: 21 },
+  titleFlex: { flex: 1 },
   titleLocal: { color: '#fff' },
   desc: { fontSize: 13.5, color: Colors.muted, lineHeight: 19 },
   descLocal: { color: 'rgba(255,255,255,0.85)' },
   progress: { fontSize: 12.5, fontWeight: '800', color: Colors.accent },
   progressLocal: { color: '#fff' },
-  captionInput: {
-    backgroundColor: Colors.bg,
-    borderWidth: 1.5,
-    borderColor: Colors.line,
-    borderRadius: Radius.sm,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    fontSize: 13.5,
-    color: Colors.ink,
-  },
-  captionInputLocal: {
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderColor: 'rgba(255,255,255,0.4)',
-    color: '#fff',
-  },
   bottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
-  reward: { fontWeight: '800', color: Colors.gold, fontSize: 14 },
+  // proofType 'either' only — the reward pill gets its own line so the two
+  // submission buttons below have the full card width to share, rather than
+  // three elements (pill + 2 buttons) squeezed onto one crowded row.
+  bottomStacked: { marginTop: 4, gap: Spacing.two },
   doneLabel: { color: Colors.green, fontWeight: '800', fontSize: 13.5 },
+  actionRow: { flexDirection: 'row', gap: 8 },
+  actionRowFull: { flexDirection: 'row', gap: 8 },
   btn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: Radius.sm, minWidth: 118, alignItems: 'center' },
+  // Overrides btn's fixed minWidth so the two either-buttons split actionRowFull evenly instead of each claiming their own fixed width.
+  btnFlex: { flex: 1, minWidth: 0 },
+  btnContent: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   btnPrimary: { backgroundColor: Colors.accent },
   btnDisabled: { opacity: 0.7 },
   btnPrimaryText: { color: '#fff', fontWeight: '800', fontSize: 13 },

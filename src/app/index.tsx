@@ -2,8 +2,11 @@ import { Image } from 'expo-image';
 import { useCallback, useEffect, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 
 import { BottomNav, TAB_BAR_HEIGHT } from '@/components/bottom-nav';
+import { CheerIcon, CommentIcon } from '@/components/rail-icons';
+import { CommentsModal } from '@/components/comments-modal';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { apiFetch, photoUrl } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
@@ -20,10 +23,11 @@ interface Post {
   createdAt: number;
   kudos: number;
   kudosMine: boolean;
+  comments: number;
 }
 
-// The feed is the app's home screen — opening the app drops you straight
-// into it, no card to tap through first.
+// The Social page is the app's home screen — opening the app drops you
+// straight into it, no card to tap through first.
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
   const token = useAuthStore((s) => s.token);
@@ -31,6 +35,7 @@ export default function FeedScreen() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [commentsPostId, setCommentsPostId] = useState<string | null>(null);
 
   const load = useCallback(
     async (targetScope: Scope) => {
@@ -77,11 +82,14 @@ export default function FeedScreen() {
     [token]
   );
 
+  const handleCommentAdded = useCallback((postId: string) => {
+    setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, comments: p.comments + 1 } : p)));
+  }, []);
+
   return (
     <View style={styles.screen}>
       <View style={[styles.header, { paddingTop: insets.top + Spacing.two }]}>
-        <Text style={styles.title}>Feed</Text>
-        <Text style={styles.subtitle}>Cheer people on and see what's actually getting done.</Text>
+        <Text style={styles.title}>Gumpa Social</Text>
       </View>
 
       <View style={styles.tabs}>
@@ -94,10 +102,19 @@ export default function FeedScreen() {
         keyExtractor={(p) => p.id}
         contentContainerStyle={[styles.list, { paddingBottom: TAB_BAR_HEIGHT + insets.bottom + Spacing.five }]}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={() => load(scope)} />}
-        renderItem={({ item }) => <PostCard post={item} onToggleKudos={() => handleToggleKudos(item.id)} />}
+        renderItem={({ item }) => (
+          <PostCard post={item} onToggleKudos={() => handleToggleKudos(item.id)} onOpenComments={() => setCommentsPostId(item.id)} />
+        )}
         ListEmptyComponent={
-          !loading ? <Text style={styles.empty}>{error ?? 'No posts yet — go complete a quest.'}</Text> : null
+          !loading ? <Text style={styles.empty}>{error ?? 'No posts yet. Go complete a quest.'}</Text> : null
         }
+      />
+
+      <CommentsModal
+        postId={commentsPostId}
+        visible={commentsPostId !== null}
+        onClose={() => setCommentsPostId(null)}
+        onCommentAdded={() => commentsPostId && handleCommentAdded(commentsPostId)}
       />
 
       <BottomNav />
@@ -113,7 +130,23 @@ function TabButton({ label, active, onPress }: { label: string; active: boolean;
   );
 }
 
-function PostCard({ post, onToggleKudos }: { post: Post; onToggleKudos: () => void }) {
+function PostCard({
+  post,
+  onToggleKudos,
+  onOpenComments,
+}: {
+  post: Post;
+  onToggleKudos: () => void;
+  onOpenComments: () => void;
+}) {
+  const cheerScale = useSharedValue(1);
+  const cheerAnimatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: cheerScale.value }] }));
+
+  const handleCheerPress = () => {
+    cheerScale.value = withSequence(withTiming(1.35, { duration: 120 }), withTiming(1, { duration: 180 }));
+    onToggleKudos();
+  };
+
   return (
     <View style={styles.card}>
       {post.photoKey && <Image source={{ uri: photoUrl(post.photoKey) }} style={styles.photo} contentFit="cover" />}
@@ -124,14 +157,20 @@ function PostCard({ post, onToggleKudos }: { post: Post; onToggleKudos: () => vo
         {!!post.caption && <Text style={styles.caption}>"{post.caption}"</Text>}
         <View style={styles.cardFoot}>
           <Text style={styles.time}>{relativeTime(post.createdAt)}</Text>
-          <Pressable
-            onPress={onToggleKudos}
-            hitSlop={8}
-            style={[styles.kudosBtn, post.kudosMine && styles.kudosBtnActive]}>
-            <Text style={[styles.kudosBtnText, post.kudosMine && styles.kudosBtnTextActive]}>
-              {post.kudosMine ? '🙌' : '👏'} {post.kudos > 0 ? post.kudos : 'Cheer'}
-            </Text>
-          </Pressable>
+          <View style={styles.actionsRow}>
+            <Pressable onPress={onOpenComments} hitSlop={8} style={styles.actionBtn}>
+              <CommentIcon size={16} color={Colors.muted} />
+              <Text style={styles.actionBtnText}>{post.comments > 0 ? post.comments : 'Comment'}</Text>
+            </Pressable>
+            <Pressable onPress={handleCheerPress} hitSlop={8} style={[styles.actionBtn, post.kudosMine && styles.actionBtnActive]}>
+              <Animated.View style={cheerAnimatedStyle}>
+                <CheerIcon size={16} color={post.kudosMine ? Colors.accent : Colors.muted} filled={post.kudosMine} />
+              </Animated.View>
+              <Text style={[styles.actionBtnText, post.kudosMine && styles.actionBtnTextActive]}>
+                {post.kudos > 0 ? post.kudos : 'Cheer'}
+              </Text>
+            </Pressable>
+          </View>
         </View>
       </View>
     </View>
@@ -151,20 +190,19 @@ function relativeTime(ts: number): string {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.bg },
-  header: { paddingHorizontal: Spacing.three, gap: 4, marginBottom: Spacing.two },
-  title: { fontSize: 26, fontWeight: '800', color: Colors.ink },
-  subtitle: { fontSize: 13.5, color: Colors.muted, lineHeight: 18 },
+  header: { paddingHorizontal: Spacing.three, marginBottom: Spacing.three },
+  title: { fontSize: 26, fontWeight: '800', color: Colors.accent, textAlign: 'center' },
   tabs: { flexDirection: 'row', gap: 8, paddingHorizontal: Spacing.three, marginBottom: Spacing.three, marginTop: Spacing.two },
   tabBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 9,
+    paddingHorizontal: 13,
+    paddingVertical: 7,
     borderRadius: Radius.pill,
     backgroundColor: Colors.card,
     borderWidth: 1.5,
     borderColor: Colors.line,
   },
   tabBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
-  tabBtnText: { fontWeight: '800', fontSize: 13.5, color: Colors.muted },
+  tabBtnText: { fontWeight: '800', fontSize: 12, color: Colors.muted },
   tabBtnTextActive: { color: '#fff' },
   list: { paddingHorizontal: Spacing.three },
   card: {
@@ -182,9 +220,11 @@ const styles = StyleSheet.create({
   caption: { fontSize: 13.5, color: Colors.ink, fontStyle: 'italic', lineHeight: 18, marginTop: 4 },
   cardFoot: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
   time: { fontSize: 11, color: Colors.muted },
-  kudosBtn: {
+  actionsRow: { flexDirection: 'row', gap: 8 },
+  actionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 5,
     backgroundColor: Colors.bg,
     borderRadius: Radius.pill,
     paddingHorizontal: 12,
@@ -192,8 +232,8 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: Colors.line,
   },
-  kudosBtnActive: { backgroundColor: Colors.accentSoft, borderColor: Colors.accent },
-  kudosBtnText: { fontSize: 12.5, fontWeight: '800', color: Colors.muted },
-  kudosBtnTextActive: { color: Colors.accent },
+  actionBtnActive: { backgroundColor: Colors.accentSoft, borderColor: Colors.accent },
+  actionBtnText: { fontSize: 12.5, fontWeight: '800', color: Colors.muted },
+  actionBtnTextActive: { color: Colors.accent },
   empty: { textAlign: 'center', color: Colors.muted, paddingVertical: 60 },
 });

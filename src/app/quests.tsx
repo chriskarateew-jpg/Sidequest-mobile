@@ -1,12 +1,14 @@
+import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BackButton } from '@/components/back-button';
-import { CADENCE_LABEL, ChallengeCard } from '@/components/challenge-card';
-import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
-import { type Cadence, type Challenge } from '@/lib/data';
-import { findChallengeById, useSidequestStore } from '@/lib/store';
+import { ChallengeCard } from '@/components/challenge-card';
+import { CheckBadgeIcon } from '@/components/rail-icons';
+import { Colors, Radius, Spacing } from '@/constants/theme';
+import { type Cadence } from '@/lib/data';
+import { useGumpaStore } from '@/lib/store';
 
 const CADENCE_FILTERS: { id: Cadence | 'all'; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -15,110 +17,72 @@ const CADENCE_FILTERS: { id: Cadence | 'all'; label: string }[] = [
   { id: 'monthly', label: 'Monthly' },
 ];
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-function formatDate(ts: number) {
-  const d = new Date(ts);
-  return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
-}
-
-interface CompletedEntry {
-  challenge: Challenge;
-  completedAt: number;
-}
-
 export default function QuestsScreen() {
   const insets = useSafeAreaInsets();
-  const completions = useSidequestStore((s) => s.completions);
-  const xp = useSidequestStore((s) => s.xp);
-  const getSuggestions = useSidequestStore((s) => s.getSuggestions);
-  const [cadence, setCadence] = useState<Cadence | 'all'>('all');
+  const xp = useGumpaStore((s) => s.xp);
+  const getSuggestions = useGumpaStore((s) => s.getSuggestions);
+  const [taskFilter, setTaskFilter] = useState<Cadence | 'all'>('all');
 
   // recomputed whenever xp changes (every completion)
   const sugg = useMemo(() => getSuggestions(), [getSuggestions, xp]);
 
-  const completedList = useMemo(() => {
-    const entries: CompletedEntry[] = Object.entries(completions)
-      .filter(([, completion]) => completion.status === 'complete')
-      .map(([key, completion]) => {
-        const id = key.split(':')[0];
-        const challenge = findChallengeById(id);
-        return challenge ? { challenge, completedAt: completion.at } : null;
-      })
-      .filter((e): e is CompletedEntry => e !== null)
-      .filter((e) => cadence === 'all' || e.challenge.cadence === cadence);
-
-    return entries.sort((a, b) => b.completedAt - a.completedAt);
-  }, [completions, cadence]);
+  const assignments = useMemo(() => {
+    if (taskFilter === 'all') return [...sugg.daily, ...sugg.weekly, ...sugg.monthly];
+    return sugg[taskFilter];
+  }, [sugg, taskFilter]);
 
   return (
     <View style={styles.screen}>
-      <FlatList
-        data={completedList}
-        keyExtractor={(e) => `${e.challenge.id}:${e.completedAt}`}
-        contentContainerStyle={[styles.content, { paddingTop: insets.top + Spacing.two }]}
-        ListHeaderComponent={
-          <View>
-            <BackButton />
-            <View style={styles.pageHead}>
-              <Text style={styles.pageTitle}>Tasks</Text>
-            </View>
+      <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + Spacing.two }]}>
+        <BackButton />
+        <View style={styles.pageHead}>
+          <Text style={styles.pageTitle}>Tasks</Text>
+          <Pressable onPress={() => router.push('/completed')} style={styles.completedBtn} hitSlop={8}>
+            <CheckBadgeIcon size={15} color={Colors.accent} />
+            <Text style={styles.completedBtnText}>Completed</Text>
+          </Pressable>
+        </View>
 
-            <AssignmentSection title="Today" challenges={sugg.daily} />
-            <AssignmentSection title="This week" challenges={sugg.weekly} />
-            <AssignmentSection title="This month" challenges={sugg.monthly} />
+        <FilterRow options={CADENCE_FILTERS} active={taskFilter} onChange={setTaskFilter} />
 
-            <Text style={styles.completedHeading}>Completed</Text>
-            <View style={styles.filterRow}>
-              {CADENCE_FILTERS.map((opt) => {
-                const active = opt.id === cadence;
-                return (
-                  <Pressable
-                    key={opt.id}
-                    onPress={() => setCadence(opt.id)}
-                    style={[styles.filterBtn, active && styles.filterBtnActive]}>
-                    <Text style={[styles.filterBtnText, active && styles.filterBtnTextActive]}>{opt.label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+        {assignments.length > 0 ? (
+          <View style={styles.sectionList}>
+            {assignments.map((c) => (
+              <ChallengeCard key={c.id} challenge={c} />
+            ))}
           </View>
-        }
-        renderItem={({ item }) => (
-          <View style={styles.cardWrap}>
-            <CompletedCard entry={item} />
-          </View>
+        ) : (
+          <Text style={styles.empty}>
+            {taskFilter === 'all' ? 'No tasks assigned right now.' : `No ${taskFilter} tasks assigned right now.`}
+          </Text>
         )}
-        ListEmptyComponent={
-          <Text style={styles.empty}>No completed quests yet — finish today's assignment to see it here.</Text>
-        }
-      />
+      </ScrollView>
     </View>
   );
 }
 
-function AssignmentSection({ title, challenges }: { title: string; challenges: Challenge[] }) {
+function FilterRow({
+  options,
+  active,
+  onChange,
+}: {
+  options: { id: Cadence | 'all'; label: string }[];
+  active: Cadence | 'all';
+  onChange: (id: Cadence | 'all') => void;
+}) {
   return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      <View style={styles.sectionList}>
-        {challenges.map((c) => (
-          <ChallengeCard key={c.id} challenge={c} />
-        ))}
-      </View>
-    </View>
-  );
-}
-
-function CompletedCard({ entry }: { entry: CompletedEntry }) {
-  const { challenge, completedAt } = entry;
-  return (
-    <View style={styles.card}>
-      <Text style={styles.cadence}>{CADENCE_LABEL[challenge.cadence]}</Text>
-      <Text style={styles.title}>{challenge.title}</Text>
-      <View style={styles.cardBottom}>
-        <Text style={styles.reward}>+{challenge.tokens} 🪙</Text>
-        <Text style={styles.doneLabel}>✓ {formatDate(completedAt)}</Text>
-      </View>
+    <View style={styles.filterRow}>
+      {options.map((opt) => {
+        const isActive = opt.id === active;
+        return (
+          <Pressable
+            key={opt.id}
+            onPress={() => onChange(opt.id)}
+            style={[styles.filterBtn, isActive && styles.filterBtnActive]}>
+            <Text style={[styles.filterBtnText, isActive && styles.filterBtnTextActive]}>{opt.label}</Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -126,12 +90,21 @@ function CompletedCard({ entry }: { entry: CompletedEntry }) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.bg },
   content: { padding: Spacing.three, paddingBottom: Spacing.six },
-  pageHead: { marginBottom: Spacing.four },
+  pageHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.four },
   pageTitle: { fontSize: 26, fontWeight: '800', color: Colors.ink },
-  section: { marginBottom: Spacing.four },
-  sectionTitle: { fontSize: 14, fontWeight: '800', color: Colors.muted, letterSpacing: 0.3, marginBottom: Spacing.two + 2 },
+  completedBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1.5,
+    borderColor: Colors.accentSoft,
+    backgroundColor: Colors.accentSoft,
+    borderRadius: Radius.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  completedBtnText: { fontSize: 13, fontWeight: '800', color: Colors.accent },
   sectionList: { gap: Spacing.two + 2 },
-  completedHeading: { fontSize: 18, fontWeight: '800', color: Colors.ink, marginBottom: Spacing.two + 2 },
   filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: Spacing.two + 2 },
   filterBtn: {
     borderWidth: 1.5,
@@ -144,18 +117,5 @@ const styles = StyleSheet.create({
   filterBtnActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
   filterBtnText: { fontSize: 13, fontWeight: '700', color: Colors.muted },
   filterBtnTextActive: { color: '#fff' },
-  cardWrap: { marginBottom: Spacing.two + 2 },
-  card: {
-    backgroundColor: Colors.card,
-    borderRadius: Radius.card,
-    padding: Spacing.three + 4,
-    gap: Spacing.two,
-    ...Shadow,
-  },
-  cadence: { fontSize: 10.5, fontWeight: '800', color: Colors.muted, letterSpacing: 0.5 },
-  title: { fontSize: 16, fontWeight: '800', color: Colors.ink, lineHeight: 21 },
-  cardBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
-  reward: { fontWeight: '800', color: Colors.gold, fontSize: 14 },
-  doneLabel: { color: Colors.green, fontWeight: '800', fontSize: 13.5 },
   empty: { textAlign: 'center', color: Colors.muted, paddingVertical: 40 },
 });

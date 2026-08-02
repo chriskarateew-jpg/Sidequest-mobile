@@ -1,4 +1,4 @@
-// Sidequest — shared, server-trusted challenge lookup. Static catalog first
+// Gumpa — shared, server-trusted challenge lookup. Static catalog first
 // (cheap, in-memory, the common case) — only the rarer unrecognized id falls
 // through to a D1 lookup for a server-generated local challenge. Either way
 // the result is fully server-validated: a client request body can never
@@ -17,5 +17,17 @@ export async function resolveCatalogEntry(env: Env, challengeId: string): Promis
 
   const row = await getLocalChallengeById(env, challengeId);
   if (!row) return null;
-  return { cadence: row.cadence as Cadence, tokens: row.tokens, verify: row.verify_type as VerifyType, title: row.title, desc: row.description };
+  return {
+    cadence: row.cadence as Cadence,
+    tokens: row.tokens,
+    verify: row.verify_type as VerifyType,
+    // Always 'camera' — a local challenge is a real-venue visit by
+    // construction, never a screenshot task.
+    proofType: 'camera',
+    title: row.title,
+    desc: row.description,
+    placeLat: row.place_lat,
+    placeLng: row.place_lng,
+    placeName: row.place_name,
+  };
 }

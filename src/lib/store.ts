@@ -1,4 +1,4 @@
-// Sidequest — game state store (zustand + AsyncStorage).
+// Gumpa — game state store (zustand + AsyncStorage).
 // Ported from the web app's js/state.js. Reads happen against an
 // in-memory copy (hydrated once at launch); writes persist async
 // in the background, mirroring localStorage's sync-read feel.
@@ -11,7 +11,7 @@ import { CHALLENGES, type Challenge, type Cadence } from '@/lib/data';
 import { getCurrentRoundedLocation } from '@/lib/location';
 import { fetchLocalChallenges } from '@/lib/local-challenges';
 
-const STORAGE_KEY = 'sidequest_state_v1';
+const STORAGE_KEY = 'gumpa_state_v1';
 const LOCAL_CHALLENGES_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface Completion {
@@ -180,22 +180,22 @@ export function describeLocalChallengesResult(result: RefreshLocalChallengesResu
     case 'skipped':
       return null;
     case 'denied':
-      return 'Location access is off — enable it for this app in your device settings.';
+      return 'Location access is off. Enable it for this app in your device settings.';
     case 'location-error':
-      return "Couldn't get your location — check your GPS/network and try again.";
+      return "Couldn't get your location. Check your GPS/network and try again.";
     case 'no-session':
       return 'Log in again to fetch local tasks.';
     case 'fetch-error':
-      return "Couldn't reach the server — check your connection and try again.";
+      return "Couldn't reach the server. Check your connection and try again.";
     case 'fetched':
       return result.count > 0
         ? `Found ${result.count} local task${result.count === 1 ? '' : 's'} near you.`
-        : 'No local tasks found near you yet — try again later.';
+        : 'No local tasks found near you yet. Try again later.';
   }
 }
 
 // ---------- store ----------
-interface SidequestStore extends PersistedState {
+interface GumpaStore extends PersistedState {
   hydrated: boolean;
   hydrate: () => Promise<void>;
 
@@ -230,7 +230,7 @@ interface SidequestStore extends PersistedState {
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
-function schedulePersist(get: () => SidequestStore) {
+function schedulePersist(get: () => GumpaStore) {
   if (persistTimer) clearTimeout(persistTimer);
   persistTimer = setTimeout(() => {
     const s = get();
@@ -252,7 +252,7 @@ function schedulePersist(get: () => SidequestStore) {
 
 // Shared reward side-effects (tokens/xp/weekly-earned/daily-streak-counter)
 // for any completion that just became 'complete', regardless of verify method.
-function applyReward(s: SidequestStore, c: Challenge) {
+function applyReward(s: GumpaStore, c: Challenge) {
   const tokens = s.tokens + c.tokens;
   const xp = s.xp + c.tokens;
 
@@ -269,7 +269,7 @@ function applyReward(s: SidequestStore, c: Challenge) {
   return { tokens, xp, weekly, streak };
 }
 
-export const useSidequestStore = create<SidequestStore>((set, get) => ({
+export const useGumpaStore = create<GumpaStore>((set, get) => ({
   ...structuredClone(DEFAULT_STATE),
   hydrated: false,
 
@@ -403,8 +403,8 @@ export const useSidequestStore = create<SidequestStore>((set, get) => ({
 }));
 
 // Checks the static catalog first, then any fetched local challenges —
-// used everywhere a challenge needs resolving by id (completion actions
-// above, and completed-history lookups in src/app/quests.tsx).
+// used everywhere a challenge needs resolving by id (the completion actions
+// above).
 export function findChallengeById(id: string): Challenge | undefined {
-  return CHALLENGES.find((c) => c.id === id) ?? useSidequestStore.getState().localChallenges.find((c) => c.id === id);
+  return CHALLENGES.find((c) => c.id === id) ?? useGumpaStore.getState().localChallenges.find((c) => c.id === id);
 }

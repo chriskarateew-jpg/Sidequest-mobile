@@ -1,4 +1,4 @@
-// Sidequest — the single entry point for recording a quest completion,
+// Gumpa — the single entry point for recording a quest completion,
 // across both verify methods (photo/streak — every challenge is photo-
 // verified, streak just spreads that across several check-ins). Replaces
 // the old POST /feed: this is where the `completions` ledger (one row per
@@ -11,10 +11,12 @@ import { resolveCatalogEntry } from './catalog';
 import { hashToken, verifyToken } from './crypto';
 import type { Env } from './env';
 import { resolveDuelOnCompletion } from './duels';
+import { haversineMeters } from './geo';
 import { base64ToBytes, error, json, safeJson } from './http';
 import { computePeriodKey, todayKey } from './period';
+import { computeDHash, findDuplicateHash, recordPhotoHash } from './photo-hash';
 import { checkRateLimit } from './ratelimit';
-import { creditTokens } from './tokens';
+import { creditTokens, getTokenBalance, type CatalogEntry } from './tokens';
 
 const MAX_CAPTION_LENGTH = 240;
 
@@ -24,6 +26,14 @@ function normalizeCaption(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   const trimmed = raw.trim().slice(0, MAX_CAPTION_LENGTH);
   return trimmed || null;
+}
+
+// The client's post-verification review screen sends an optional 1-5 star
+// rating of the task itself — anything else (missing, out of range, not an
+// integer) normalizes to null rather than getting stored as a bogus rating.
+function normalizeRating(raw: unknown): number | null {
+  if (typeof raw !== 'number' || !Number.isInteger(raw)) return null;
+  return raw >= 1 && raw <= 5 ? raw : null;
 }
 
 interface CompletionRow {
@@ -69,6 +79,72 @@ async function requirePhotoProof(
   return { photoBase64, mediaType };
 }
 
+// Half a mile. Compared against a precise GPS fix (src/lib/photo.ts's
+// getCurrentPreciseLocation), not the app's coarse ~1km-grid location —
+// real device GPS accuracy is typically ~10-50m, worse indoors/urban canyon
+// (up to ~100-150m), so this is a deliberately generous "same general
+// vicinity" check on top of that, not a tight pin-to-pin match. This is one
+// layer among three (camera-only capture, this GPS check, app-wide photo
+// dedup below), not the only fraud defense. Note: recordPhotoHash rounds
+// lat/lng back down before persisting — this threshold only governs the
+// in-request comparison, not what ends up in storage.
+const LOCAL_DISTANCE_THRESHOLD_METERS = 805; // 0.5 mi ≈ 804.67 m
+
+function completionResponseShape(row: CompletionRow) {
+  return {
+    challengeId: row.challenge_id,
+    periodKey: row.period_key,
+    verifyType: row.verify_type,
+    progress: row.progress,
+    target: row.target,
+    status: row.status,
+    postId: row.post_id,
+  };
+}
+
+// Builds the same response shape a successful /complete returns
+// ({completion, tokens}) so the client's rejection handling can reuse its
+// existing reconciliation (syncCompletion/syncTokens) to roll back whatever
+// it already applied optimistically — see src/lib/complete.ts.
+async function rejectSubmission(env: Env, userId: string, row: CompletionRow, errorCode: string, reason: string): Promise<Response> {
+  const tokens = await getTokenBalance(env, userId);
+  return json({ error: errorCode, reason, completion: completionResponseShape(row), tokens }, 409);
+}
+
+// Runs right after requirePhotoProof succeeds, before any DB write, for
+// every photo-verified submission (the one-shot 'photo' branch and every
+// streak check-in, not just the completing one) — otherwise the same photo
+// could be resubmitted daily across a streak, or reused across challenges.
+async function checkPhotoFraud(
+  env: Env,
+  userId: string,
+  catalogEntry: CatalogEntry,
+  row: CompletionRow,
+  body: Record<string, unknown>
+): Promise<{ hash: string; lat?: number; lng?: number } | Response> {
+  const hashThumbnailBase64 = body.hashThumbnailBase64 as string | undefined;
+  if (!hashThumbnailBase64) return error('Missing hashThumbnailBase64');
+  const lat = typeof body.lat === 'number' ? body.lat : undefined;
+  const lng = typeof body.lng === 'number' ? body.lng : undefined;
+
+  const hash = await computeDHash(hashThumbnailBase64);
+  if (await findDuplicateHash(env, hash)) {
+    return rejectSubmission(env, userId, row, 'duplicate_photo', 'Exact photo already submitted.');
+  }
+
+  // Only local/venue challenges carry a target location to check against —
+  // the static catalog's generic challenges ("do 20 push-ups") have none.
+  if (catalogEntry.placeLat != null && catalogEntry.placeLng != null && lat != null && lng != null) {
+    const distanceMeters = haversineMeters(lat, lng, catalogEntry.placeLat, catalogEntry.placeLng);
+    if (distanceMeters > LOCAL_DISTANCE_THRESHOLD_METERS) {
+      const placeName = catalogEntry.placeName ?? 'this place';
+      return rejectSubmission(env, userId, row, 'location_mismatch', `Photo location doesn't match ${placeName}.`);
+    }
+  }
+
+  return { hash, lat, lng };
+}
+
 export async function handleComplete(request: Request, env: Env): Promise<Response> {
   const auth = await requireAuth(request, env);
   if (!auth) return error('Not authenticated', 401);
@@ -106,20 +182,25 @@ export async function handleComplete(request: Request, env: Env): Promise<Respon
   if (row.status === 'complete') return error('Already completed for this period', 409);
 
   const caption = normalizeCaption(body.caption);
+  const rating = normalizeRating(body.rating);
   let justCompletedPostId: string | null = null;
 
   if (catalogEntry.verify === 'photo') {
     const proof = await requirePhotoProof(env, auth.id, challengeId, body);
     if (proof instanceof Response) return proof;
 
+    const fraudCheck = await checkPhotoFraud(env, auth.id, catalogEntry, row, body);
+    if (fraudCheck instanceof Response) return fraudCheck;
+    await recordPhotoHash(env, { userId: auth.id, challengeId, hash: fraudCheck.hash, lat: fraudCheck.lat, lng: fraudCheck.lng });
+
     const postId = crypto.randomUUID();
     const ext = proof.mediaType.includes('png') ? 'png' : 'jpg';
     const key = `posts/${postId}.${ext}`;
     await env.PHOTOS.put(key, base64ToBytes(proof.photoBase64), { httpMetadata: { contentType: proof.mediaType } });
     await env.DB.prepare(
-      'INSERT INTO posts (id, user_id, quest_title, quest_desc, photo_key, challenge_id, caption, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO posts (id, user_id, quest_title, quest_desc, photo_key, challenge_id, caption, rating, tokens_earned, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     )
-      .bind(postId, auth.id, catalogEntry.title, catalogEntry.desc, key, challengeId, caption, Date.now())
+      .bind(postId, auth.id, catalogEntry.title, catalogEntry.desc, key, challengeId, caption, rating, catalogEntry.tokens, Date.now())
       .run();
 
     const claim = await env.DB.prepare(
@@ -136,6 +217,10 @@ export async function handleComplete(request: Request, env: Env): Promise<Respon
     const proof = await requirePhotoProof(env, auth.id, challengeId, body);
     if (proof instanceof Response) return proof;
 
+    const fraudCheck = await checkPhotoFraud(env, auth.id, catalogEntry, row, body);
+    if (fraudCheck instanceof Response) return fraudCheck;
+    await recordPhotoHash(env, { userId: auth.id, challengeId, hash: fraudCheck.hash, lat: fraudCheck.lat, lng: fraudCheck.lng });
+
     const newProgress = row.progress + 1;
     if (newProgress >= row.target) {
       // Only the completing check-in's photo gets uploaded/posted — earlier
@@ -147,9 +232,9 @@ export async function handleComplete(request: Request, env: Env): Promise<Respon
       const key = `posts/${postId}.${ext}`;
       await env.PHOTOS.put(key, base64ToBytes(proof.photoBase64), { httpMetadata: { contentType: proof.mediaType } });
       await env.DB.prepare(
-        'INSERT INTO posts (id, user_id, quest_title, quest_desc, photo_key, challenge_id, caption, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO posts (id, user_id, quest_title, quest_desc, photo_key, challenge_id, caption, rating, tokens_earned, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
       )
-        .bind(postId, auth.id, catalogEntry.title, catalogEntry.desc, key, challengeId, caption, Date.now())
+        .bind(postId, auth.id, catalogEntry.title, catalogEntry.desc, key, challengeId, caption, rating, catalogEntry.tokens, Date.now())
         .run();
 
       const claim = await env.DB.prepare(

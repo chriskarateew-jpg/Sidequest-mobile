@@ -1,4 +1,4 @@
-// Gumption — mandatory login/signup, shown in place of the whole app until
+// Gumpa — mandatory login/signup, shown in place of the whole app until
 // there's a session. An account is required so quest proof can flow into a
 // real social feed and friends can find each other.
 
@@ -16,9 +16,9 @@ export function AuthGateway() {
   return (
     <View style={styles.screen}>
       <View style={styles.brand}>
-        <Text style={styles.appName}>Gumption</Text>
+        <Text style={styles.appName}>Gumpa</Text>
         <View style={styles.brandRule} />
-        <Text style={styles.example}>“She had the gumption to ask for the raise herself.”</Text>
+        <Text style={styles.example}>gump·tion (n.): initiative and the courage to act. Not someday. Today.</Text>
       </View>
 
       {mode === 'login' && <LoginForm onSwitch={() => setMode('signup')} onForgot={() => setMode('reset')} />}
@@ -100,7 +100,7 @@ function ResetRequestForm({ onBack }: { onBack: () => void }) {
     return (
       <View style={styles.form}>
         <Text style={styles.tagline}>
-          If that email has a Gumption account, we&apos;ve sent a link to reset the password. Check your inbox.
+          If that email has a Gumpa account, we&apos;ve sent a link to reset the password. Check your inbox.
         </Text>
         <Pressable onPress={onBack}>
           <Text style={styles.link}>Back to log in</Text>

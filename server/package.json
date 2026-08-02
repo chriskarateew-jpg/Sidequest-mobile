@@ -1,5 +1,5 @@
 {
-  "name": "sidequest-verify-server",
+  "name": "gumpa-verify-server",
   "version": "1.0.0",
   "private": true,
   "scripts": {
@@ -11,5 +11,8 @@
     "@cloudflare/workers-types": "^4.20250109.0",
     "typescript": "~5.9.2",
     "wrangler": "^3.90.0"
+  },
+  "dependencies": {
+    "@jsquash/jpeg": "^1.6.0"
   }
 }

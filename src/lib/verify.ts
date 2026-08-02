@@ -1,4 +1,4 @@
-// Sidequest — calls the verification endpoint to check that a submitted
+// Gumpa — calls the verification endpoint to check that a submitted
 // photo plausibly shows a given quest being completed. The server resolves
 // the challenge's title/desc itself from its trusted catalog (never from
 // the client) to build the AI prompt. The Anthropic API key lives only on
@@ -29,7 +29,7 @@ export async function verifyPhoto(params: {
     const data = (await res.json()) as { matches?: boolean; reason?: string; photoProof?: string };
     if (data.matches && data.photoProof) return { status: 'match', photoProof: data.photoProof };
     if (data.matches) return { status: 'error' }; // matched but no proof token — shouldn't happen, treat as unverifiable
-    return { status: 'no-match', reason: data.reason || "Doesn't look like a match — try again." };
+    return { status: 'no-match', reason: data.reason || "Doesn't look like a match. Try again." };
   } catch {
     return { status: 'error' };
   }

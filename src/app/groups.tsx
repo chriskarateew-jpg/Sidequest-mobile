@@ -131,7 +131,7 @@ export default function GroupsScreen() {
         show(data.error ?? "Couldn't create that group.");
         return;
       }
-      show(`✨ "${data.group.name}" created — invite code ${data.group.inviteCode}`);
+      show(`✨ "${data.group.name}" created. Invite code ${data.group.inviteCode}`);
       setNameInput('');
       setLocationInput('');
       setPicture(null);
@@ -229,7 +229,7 @@ export default function GroupsScreen() {
                     />
                     <TextInput
                       style={styles.input}
-                      placeholder="Location (optional) — e.g. Austin, TX"
+                      placeholder="Location (optional), e.g. Austin, TX"
                       placeholderTextColor={Colors.muted}
                       value={locationInput}
                       onChangeText={setLocationInput}
@@ -280,7 +280,7 @@ export default function GroupsScreen() {
         )}
         ListEmptyComponent={
           !loading ? (
-            <Text style={styles.empty}>No groups yet — create one or join with an invite code.</Text>
+            <Text style={styles.empty}>No groups yet. Create one or join with an invite code.</Text>
           ) : null
         }
       />
@@ -393,7 +393,7 @@ function PotsSection({ groupId, token, show }: { groupId: string; token: string 
         show(data.error ?? "Couldn't start that pot.");
         return;
       }
-      show(`🪙 Pot started — ${buyIn} tokens to buy in`);
+      show(`🪙 Pot started: ${buyIn} tokens to buy in`);
       setCreating(false);
       loadPots();
     } finally {
@@ -408,7 +408,7 @@ function PotsSection({ groupId, token, show }: { groupId: string; token: string 
       show(data.error ?? "Couldn't join that pot.");
       return;
     }
-    show('🪙 Staked — good luck!');
+    show('🪙 Staked. Good luck!');
     loadPots();
   };
 

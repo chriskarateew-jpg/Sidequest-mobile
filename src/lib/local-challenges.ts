@@ -1,4 +1,4 @@
-// Sidequest — fetches location-flavored challenges tied to real nearby
+// Gumpa — fetches location-flavored challenges tied to real nearby
 // places (see server/src/local-challenges.ts). Throws on a network error or
 // a non-OK response — the caller (store.ts's refreshLocalChallenges) is the
 // one that decides how to surface that, so this doesn't flatten "reached

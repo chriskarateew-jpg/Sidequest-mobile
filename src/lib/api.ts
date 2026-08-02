@@ -1,4 +1,4 @@
-// Sidequest — shared fetch helper for the backend Worker (auth, feed, friends,
+// Gumpa — shared fetch helper for the backend Worker (auth, feed, friends,
 // photo verification all live behind EXPO_PUBLIC_API_URL).
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL;

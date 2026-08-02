@@ -1,4 +1,4 @@
-// Sidequest — server-side period keys, mirroring src/lib/store.ts's
+// Gumpa — server-side period keys, mirroring src/lib/store.ts's
 // dayKey/weekKey/monthKey. Computed independently from Date.now() (UTC, since
 // the Worker has no notion of the user's local timezone) rather than trusting
 // a client-supplied period key — a forged period key would otherwise let a

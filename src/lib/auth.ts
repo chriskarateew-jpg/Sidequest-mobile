@@ -1,4 +1,4 @@
-// Sidequest — account/session state. Local quest-tracking works with no
+// Gumpa — account/session state. Local quest-tracking works with no
 // account at all; logging in only unlocks the social feed and friends.
 
 import * as SecureStore from 'expo-secure-store';
@@ -6,7 +6,7 @@ import { create } from 'zustand';
 
 import { apiFetch } from '@/lib/api';
 
-const TOKEN_KEY = 'sidequest_auth_token';
+const TOKEN_KEY = 'gumpa_auth_token';
 
 export interface AuthUser {
   id: string;
@@ -14,12 +14,19 @@ export interface AuthUser {
   email: string;
   isPublic: boolean;
   emailVerified: boolean;
+  avatarKey: string | null;
 }
 
 interface AuthState {
   hydrated: boolean;
   token: string | null;
   user: AuthUser | null;
+  // True only for the remainder of the session in which signup() just
+  // succeeded — never set by login()/hydrate() — so the profile-picture
+  // prompt (see AvatarOnboarding) is a one-time part of account creation,
+  // not something a returning user sees on every login.
+  justSignedUp: boolean;
+  clearJustSignedUp: () => void;
   hydrate: () => Promise<void>;
   signup: (username: string, email: string, password: string) => Promise<string | null>;
   login: (identifier: string, password: string) => Promise<string | null>;
@@ -28,6 +35,7 @@ interface AuthState {
   resendVerification: () => Promise<string | null>;
   requestPasswordReset: (email: string) => Promise<void>;
   setPrivacy: (isPublic: boolean) => Promise<string | null>;
+  setAvatar: (base64: string, mediaType: string) => Promise<string | null>;
 }
 
 async function getStoredToken(): Promise<string | null> {
@@ -58,6 +66,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   hydrated: false,
   token: null,
   user: null,
+  justSignedUp: false,
+
+  clearJustSignedUp: () => set({ justSignedUp: false }),
 
   hydrate: async () => {
     const token = await getStoredToken();
@@ -82,10 +93,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const data = (await res.json()) as { token?: string; user?: AuthUser; error?: string };
       if (!res.ok || !data.token || !data.user) return data.error ?? 'Something went wrong. Try again.';
       await setStoredToken(data.token);
-      set({ token: data.token, user: data.user });
+      set({ token: data.token, user: data.user, justSignedUp: true });
       return null;
     } catch {
-      return 'Could not reach the server — check your connection.';
+      return 'Could not reach the server. Check your connection.';
     }
   },
 
@@ -98,7 +109,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ token: data.token, user: data.user });
       return null;
     } catch {
-      return 'Could not reach the server — check your connection.';
+      return 'Could not reach the server. Check your connection.';
     }
   },
 
@@ -129,7 +140,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (!res.ok) return data.error ?? 'Something went wrong. Try again.';
       return null;
     } catch {
-      return 'Could not reach the server — check your connection.';
+      return 'Could not reach the server. Check your connection.';
     }
   },
 
@@ -151,7 +162,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set((s) => (s.user ? { user: { ...s.user, isPublic } } : s));
       return null;
     } catch {
-      return 'Could not reach the server — check your connection.';
+      return 'Could not reach the server. Check your connection.';
+    }
+  },
+
+  setAvatar: async (base64, mediaType) => {
+    const { token } = get();
+    if (!token) return 'Not logged in.';
+    try {
+      const res = await apiFetch('/account/avatar', { method: 'POST', token, body: { pictureBase64: base64, mediaType } });
+      const data = (await res.json()) as { avatarKey?: string; error?: string };
+      if (!res.ok || !data.avatarKey) return data.error ?? 'Something went wrong. Try again.';
+      const avatarKey = data.avatarKey;
+      set((s) => (s.user ? { user: { ...s.user, avatarKey } } : s));
+      return null;
+    } catch {
+      return 'Could not reach the server. Check your connection.';
     }
   },
 }));

@@ -1,4 +1,4 @@
-// Gumption — first-run prompt to enable location, shown right at the root
+// Gumpa — first-run prompt to enable location, shown right at the root
 // as soon as a session exists (see _layout.tsx), instead of waiting for the
 // user to scroll into the Tasks tab to discover local tasks exist at all.
 // Purely a UI wrapper around store state: refreshLocalChallenges/opt-out
@@ -9,11 +9,11 @@ import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useState } from 'react';
 
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
-import { describeLocalChallengesResult, useSidequestStore } from '@/lib/store';
+import { describeLocalChallengesResult, useGumpaStore } from '@/lib/store';
 import { useToastStore } from '@/lib/toast';
 
 export function LocationOnboarding({ visible }: { visible: boolean }) {
-  const refreshLocalChallenges = useSidequestStore((s) => s.refreshLocalChallenges);
+  const refreshLocalChallenges = useGumpaStore((s) => s.refreshLocalChallenges);
   const show = useToastStore((s) => s.show);
   const [enabling, setEnabling] = useState(false);
 
@@ -26,7 +26,7 @@ export function LocationOnboarding({ visible }: { visible: boolean }) {
   };
 
   const handleDismiss = () => {
-    useSidequestStore.setState({ locationOptOut: true });
+    useGumpaStore.setState({ locationOptOut: true });
   };
 
   return (
@@ -37,7 +37,7 @@ export function LocationOnboarding({ visible }: { visible: boolean }) {
           <Text style={styles.title}>Real tasks, tied to real places near you</Text>
           <Text style={styles.desc}>
             Turn on location and your assignments will include actual nearby parks, cafes, and landmarks worth
-            visiting — not just generic to-dos.
+            visiting, not just generic to-dos.
           </Text>
           <Text style={styles.proofNote}>📸 Every location task is proven with a photo, so it's clear you actually went.</Text>
 

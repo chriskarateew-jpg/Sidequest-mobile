@@ -1,18 +1,18 @@
-// Sidequest palette — an analogous yellow-green/orange/green brand trio on a
-// light, editorial backdrop. accent/accent2 are the two brand tones; gold
-// still marks the reward, not the brand. localAccent is reserved for
-// location-tied task cards only, so that highlight reads as a distinct
-// signal rather than just "more brand color."
+// Gumpa palette — a single blue brand tone on a light, editorial
+// backdrop. accent is the given brand blue; accent2 (gradient partner) and
+// accentSoft (tint background) are lighter shades of that same hue, not
+// separately-chosen colors. gold still marks the reward, not the brand.
+// Location-tied task cards reuse accent/accent2 for their animated barrier
+// (see LocalBarrierBorder) rather than a separate color.
 export const Colors = {
   bg: '#F5F4F0',
   card: '#FFFFFF',
   ink: '#111214',
   muted: '#6E7178',
   line: '#E5E3DD',
-  accent: '#EF8F10',
-  accent2: '#D7EE11',
-  accentSoft: '#FCE9CC',
-  localAccent: '#68EB14',
+  accent: '#1A2FE5',
+  accent2: '#5F6DED',
+  accentSoft: '#DDE0FB',
   gold: '#FFB800',
   goldSoft: '#FFF1CC',
   goldText: '#7A4E00',

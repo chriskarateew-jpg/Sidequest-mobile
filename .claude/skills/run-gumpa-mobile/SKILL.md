@@ -1,13 +1,13 @@
 ---
-name: run-sidequest-mobile
-description: Build, run, and drive the Sidequest (Gumption) Expo app in a headless container. Use when asked to start the app, take a screenshot of a screen, verify a UI change actually renders, or drive a signup/task-completion flow. No iOS/Android simulator is available here — this drives the web build with Playwright.
+name: run-gumpa-mobile
+description: Build, run, and drive the Gumpa Expo app in a headless container. Use when asked to start the app, take a screenshot of a screen, verify a UI change actually renders, or drive a signup/task-completion flow. No iOS/Android simulator is available here — this drives the web build with Playwright.
 ---
 
 This is an Expo Router app (`react-native-web` is already a dependency), so
 the way to actually see it render in this container is `expo start --web`
 plus a headless Chromium driving it — there's no simulator here.
 `chromium-cli` is not installed in this environment, so drive it via
-`.claude/skills/run-sidequest-mobile/driver.mjs`, a small stdin-driven
+`.claude/skills/run-gumpa-mobile/driver.mjs`, a small stdin-driven
 Playwright REPL built for this project (same command-per-line shape as
 `chromium-cli`, just hand-rolled). All paths below are relative to the repo
 root.
@@ -44,15 +44,15 @@ many signup attempts. Try again later."). Reserve `signup` for
 specifically testing the signup flow itself.
 
 ```bash
-node .claude/skills/run-sidequest-mobile/driver.mjs <<'EOF'
+node .claude/skills/run-gumpa-mobile/driver.mjs <<'EOF'
 launch
 nav http://localhost:8090
-signup sidequest-test-account sidequest-test-account@example.com TestPass123!
+signup gumpa-test-account gumpa-test-account@example.com TestPass123!
 quit
 EOF
 ```
 
-Then use `login sidequest-test-account@example.com TestPass123!` in every
+Then use `login gumpa-test-account@example.com TestPass123!` in every
 script below instead of `signup`.
 
 ## Build
@@ -81,10 +81,10 @@ taskkill //PID <pid> //F
 line:
 
 ```bash
-node .claude/skills/run-sidequest-mobile/driver.mjs <<'EOF'
+node .claude/skills/run-gumpa-mobile/driver.mjs <<'EOF'
 launch
 nav http://localhost:8090
-login sidequest-test-account@example.com TestPass123!
+login gumpa-test-account@example.com TestPass123!
 dismiss-location-modal
 click-tab Tasks
 wait-for Today
@@ -95,13 +95,13 @@ quit
 EOF
 ```
 
-Screenshots land in `.claude/skills/run-sidequest-mobile/screenshots/`
+Screenshots land in `.claude/skills/run-gumpa-mobile/screenshots/`
 (gitignored — ephemeral verification output, not source).
 
 | command | what it does |
 |---|---|
 | `launch` | Opens headless Chromium + one page (420×900 viewport), wires up console/pageerror capture. Always first. |
-| `seed-local` | Injects a fake local/destination-tied task (with `bgImage`) into `localStorage` under `sidequest_state_v1`, via `addInitScript` so it's there before the app's own `hydrate()` runs. **Must come before `nav`** — seeding after the app has already mounted does nothing. Use this to see a local-task card without real GPS (geolocation isn't available headlessly). |
+| `seed-local` | Injects a fake local/destination-tied task (with `bgImage`) into `localStorage` under `gumpa_state_v1`, via `addInitScript` so it's there before the app's own `hydrate()` runs. **Must come before `nav`** — seeding after the app has already mounted does nothing. Use this to see a local-task card without real GPS (geolocation isn't available headlessly). |
 | `nav <url>` | Full page load. **Only safe once, as the very first navigation.** See Gotchas — a second `nav` after auth logs you out. |
 | `signup [user] [email] [pass]` | Clicks through to the signup form and submits. Args are optional — auto-generates a unique throwaway identity if omitted. Lands logged in (no email-verification gate blocks access). |
 | `login <identifier> <password>` | Fills and submits the login form directly, for a pre-existing test account. |
@@ -161,7 +161,7 @@ No test suite configured in this project yet (no `test` script in
   instance, which reports as present-but-hidden and never satisfies
   `waitFor`. Wait for text unique to the screen's body instead (e.g. `Today`
   on the Tasks screen).
-- **`localStorage` key for seeded app state is `sidequest_state_v1`** — the
+- **`localStorage` key for seeded app state is `gumpa_state_v1`** — the
   Zustand store's AsyncStorage backend is plain `window.localStorage` on
   web, same key as native. Shape is `PersistedState` in `src/lib/store.ts`;
   a `Challenge` needs `bgImage` set for it to render as a local/destination

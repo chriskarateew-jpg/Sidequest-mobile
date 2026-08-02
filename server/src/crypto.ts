@@ -1,4 +1,4 @@
-// Sidequest — password hashing (PBKDF2) and session tokens (HS256 JWT-ish),
+// Gumpa — password hashing (PBKDF2) and session tokens (HS256 JWT-ish),
 // built entirely on Web Crypto so there's no extra dependency to bundle into
 // the Worker.
 

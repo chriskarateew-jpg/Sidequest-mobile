@@ -38,8 +38,8 @@ yarn-error.*
 server/.dev.vars
 server/.wrangler/
 
-# run-sidequest-mobile skill — screenshots are ephemeral verification output
-.claude/skills/run-sidequest-mobile/screenshots/
+# run-gumpa-mobile skill — screenshots are ephemeral verification output
+.claude/skills/run-gumpa-mobile/screenshots/
 
 # typescript
 *.tsbuildinfo

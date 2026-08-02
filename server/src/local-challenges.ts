@@ -1,4 +1,4 @@
-// Sidequest — location-flavored challenges tied to real nearby places.
+// Gumpa — location-flavored challenges tied to real nearby places.
 // GET /local-challenges turns a coarse lat/lng into a cached batch of
 // real-venue tasks: on a region cache miss, pulls nearby places from
 // OpenStreetMap (places.ts) and has Claude write short on-brand copy for
@@ -63,7 +63,9 @@ function bucketRegionKey(lat: number, lng: number): string {
 }
 
 function toClientChallenge(row: LocalChallengeRow) {
-  return { id: row.id, cadence: row.cadence, cat: row.cat, tokens: row.tokens, title: row.title, desc: row.description, verify: row.verify_type };
+  // Always 'camera' — a local challenge is a real-venue visit by
+  // construction, never a screenshot task (see ProofType in tokens.ts).
+  return { id: row.id, cadence: row.cadence, cat: row.cat, tokens: row.tokens, title: row.title, desc: row.description, verify: row.verify_type, proofType: 'camera' as const };
 }
 
 async function loadBatch(env: Env, regionKey: string, freshOnly: boolean): Promise<LocalChallengeRow[] | null> {
@@ -97,7 +99,7 @@ function pickDiverseVenues(places: NearbyPlace[]): NearbyPlace[] {
 
 function buildCopyPrompt(venues: NearbyPlace[]): string {
   return [
-    'You write short, upbeat challenge copy for a personal-growth app called Gumption.',
+    'You write short, upbeat challenge copy for a personal-growth app called Gumpa.',
     'For each real place below, write a task title (imperative, under 8 words, e.g. "Run a loop through Depot Park")',
     'and a one-sentence description (under 20 words) nudging the user to actually go visit it.',
     '',
@@ -112,6 +114,8 @@ function buildCopyPrompt(venues: NearbyPlace[]): string {
     'Only state facts you are confident are well-established and still true — do not invent hours, prices, or',
     'specifics you are unsure of, and skip unverifiable superlatives ("the best", "world-famous").',
     '',
+    'Never use em dashes (—). Use a period, comma, or colon instead.',
+    '',
     'Places:',
     ...venues.map((v, i) => `${i + 1}. ${v.name} (${v.category})`),
     '',
@@ -123,6 +127,24 @@ function normalizeCopy(raw: unknown, maxLength: number): string | null {
   if (typeof raw !== 'string') return null;
   const trimmed = raw.trim().slice(0, maxLength);
   return trimmed || null;
+}
+
+// The prompt above explicitly tells Claude not to write category-level copy
+// ("Explore SoHo's streets and architecture") instead of naming the actual
+// place — but that's an instruction, not a guarantee, and Claude sometimes
+// ignores it and writes exactly that kind of generic filler anyway (observed
+// directly: it produced "Explore a new neighborhood" for a real venue, the
+// literal example the app's own docs/challenge-writing-guide.md calls out as
+// the canonical failure case). A title that never names the venue has
+// collapsed into a category, which makes /verify trivially easy to satisfy
+// with almost any photo taken in the general vicinity — undermining the
+// whole point of photo-verified proof. Requiring the venue's own name to
+// appear is a cheap, reliable proxy for "still specific," since the
+// templated fallback below is specific by construction.
+function mentionsVenue(title: string, venueName: string): boolean {
+  const titleLower = title.toLowerCase();
+  const words = venueName.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+  return words.some((w) => titleLower.includes(w));
 }
 
 const CATEGORY_VERB: Record<PlaceCategory, string> = {
@@ -190,6 +212,10 @@ async function generateCopy(env: Env, venues: NearbyPlace[]): Promise<{ title: s
       const desc = normalizeCopy((item as Record<string, unknown>)?.desc, MAX_DESC_LENGTH);
       if (!title || !desc) {
         console.error(`local-challenges: malformed copy for "${venues[i].name}", using templated fallback for that venue`);
+        return fallback[i];
+      }
+      if (!mentionsVenue(title, venues[i].name)) {
+        console.error(`local-challenges: generated title "${title}" never names "${venues[i].name}", using templated fallback for that venue`);
         return fallback[i];
       }
       return { title, desc };

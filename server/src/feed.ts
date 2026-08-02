@@ -10,9 +10,12 @@ interface PostRow {
   quest_desc: string;
   photo_key: string | null;
   caption: string | null;
+  rating: number | null;
+  tokens_earned: number | null;
   created_at: number;
   kudos_count: number;
   kudos_mine: number;
+  comment_count: number;
 }
 
 // Completion writes (and the token/duel side effects that go with them) live
@@ -28,7 +31,8 @@ export async function handleListFeed(request: Request, env: Env, scope: 'public'
 
   let query = `SELECT posts.*, users.username as username,
       (SELECT COUNT(*) FROM post_kudos WHERE post_kudos.post_id = posts.id) as kudos_count,
-      (SELECT COUNT(*) FROM post_kudos WHERE post_kudos.post_id = posts.id AND post_kudos.user_id = ?) as kudos_mine
+      (SELECT COUNT(*) FROM post_kudos WHERE post_kudos.post_id = posts.id AND post_kudos.user_id = ?) as kudos_mine,
+      (SELECT COUNT(*) FROM post_comments WHERE post_comments.post_id = posts.id) as comment_count
     FROM posts JOIN users ON users.id = posts.user_id`;
   const params: unknown[] = [auth?.id ?? ''];
 
@@ -60,6 +64,34 @@ export async function handleListFeed(request: Request, env: Env, scope: 'public'
     createdAt: row.created_at,
     kudos: row.kudos_count,
     kudosMine: !!row.kudos_mine,
+    comments: row.comment_count,
+  }));
+
+  return json({ posts });
+}
+
+// The Completed screen's data source — every completed task creates exactly
+// one post (see complete.ts), so a user's own posts *are* their completed-task
+// history: photo, description, star rating, and coins earned all live here
+// already. Unlike the public/friends feed, this includes private-account
+// posts (it's the owner looking at their own history) and isn't capped at 40.
+export async function handleListMyPosts(request: Request, env: Env): Promise<Response> {
+  const auth = await requireAuth(request, env);
+  if (!auth) return error('Not authenticated', 401);
+
+  const { results } = await env.DB.prepare('SELECT * FROM posts WHERE user_id = ? ORDER BY created_at DESC LIMIT 200')
+    .bind(auth.id)
+    .all<PostRow>();
+
+  const posts = (results ?? []).map((row) => ({
+    id: row.id,
+    questTitle: row.quest_title,
+    questDesc: row.quest_desc,
+    photoKey: row.photo_key,
+    caption: row.caption,
+    rating: row.rating,
+    tokensEarned: row.tokens_earned,
+    createdAt: row.created_at,
   }));
 
   return json({ posts });

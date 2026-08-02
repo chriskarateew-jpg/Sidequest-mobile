@@ -1,8 +1,8 @@
-// Sidequest — backend. Auth, social feed, friends, and quest-photo
+// Gumpa — backend. Auth, social feed, friends, and quest-photo
 // verification, all in one small Worker backed by D1 (users/posts/friends),
 // R2 (photo storage), and KV (rate limiting).
 
-import { handleSetPrivacy } from './account';
+import { handleSetAvatar, handleSetPrivacy } from './account';
 import {
   handleLogin,
   handleMe,
@@ -13,10 +13,11 @@ import {
   handleSignup,
   handleVerifyEmail,
 } from './auth';
+import { handleAddComment, handleListComments } from './comments';
 import { handleComplete } from './complete';
 import { handleCancelDuel, handleCreateDuel, handleListDuels, handleRespondDuel } from './duels';
 import type { Env } from './env';
-import { handleGetPhoto, handleListFeed, handleToggleKudos } from './feed';
+import { handleGetPhoto, handleListFeed, handleListMyPosts, handleToggleKudos } from './feed';
 import { handleFriendRequest, handleFriendRespond, handleListFriends, handleSearchUsers } from './friends';
 import { handleCreateGroup, handleGetGroup, handleJoinGroup, handleListMyGroups } from './groups';
 import { CORS_HEADERS, error } from './http';
@@ -48,14 +49,21 @@ export default {
     if (method === 'POST' && pathname === '/auth/reset-password') return handleResetPassword(request, env);
 
     if (method === 'POST' && pathname === '/account/privacy') return handleSetPrivacy(request, env);
+    if (method === 'POST' && pathname === '/account/avatar') return handleSetAvatar(request, env);
 
     if (method === 'POST' && pathname === '/complete') return handleComplete(request, env);
     if (method === 'GET' && pathname === '/feed/public') return handleListFeed(request, env, 'public');
     if (method === 'GET' && pathname === '/feed/friends') return handleListFeed(request, env, 'friends');
+    if (method === 'GET' && pathname === '/posts/mine') return handleListMyPosts(request, env);
     if (method === 'GET' && pathname.startsWith('/photos/')) return handleGetPhoto(env, pathname.slice('/photos/'.length));
 
     const kudosMatch = method === 'POST' ? pathname.match(/^\/posts\/([^/]+)\/kudos$/) : null;
     if (kudosMatch) return handleToggleKudos(request, env, kudosMatch[1]);
+
+    const listCommentsMatch = method === 'GET' ? pathname.match(/^\/posts\/([^/]+)\/comments$/) : null;
+    if (listCommentsMatch) return handleListComments(request, env, listCommentsMatch[1]);
+    const addCommentMatch = method === 'POST' ? pathname.match(/^\/posts\/([^/]+)\/comments$/) : null;
+    if (addCommentMatch) return handleAddComment(request, env, addCommentMatch[1]);
 
     if (method === 'GET' && pathname === '/users/search') return handleSearchUsers(request, env);
     if (method === 'POST' && pathname === '/friends/request') return handleFriendRequest(request, env);

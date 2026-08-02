@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Sidequest (Gumption) — headless-Chromium REPL driver for the Expo web
+// Gumpa — headless-Chromium REPL driver for the Expo web
 // build, in the spirit of chromium-cli (which isn't installed in this
 // environment). Reads one command per line from stdin, drives a single
 // persistent page, writes screenshots to ./screenshots next to this file.
@@ -47,6 +47,7 @@ function seedLocalState() {
         title: 'Photograph a cast-iron facade on Greene Street',
         desc: "Document SoHo's ornate 19th-century building fronts and their intricate architectural details up close.",
         verify: 'photo',
+        proofType: 'camera',
         bgImage: 'https://picsum.photos/seed/soho/1200/800',
         isLocal: true,
       },
@@ -66,9 +67,9 @@ async function cmd_launch() {
 
 async function cmd_seedLocal() {
   await page.addInitScript((seed) => {
-    window.localStorage.setItem('sidequest_state_v1', JSON.stringify(seed));
+    window.localStorage.setItem('gumpa_state_v1', JSON.stringify(seed));
   }, seedLocalState());
-  console.log('seeded sidequest_state_v1 (will apply on next nav)');
+  console.log('seeded gumpa_state_v1 (will apply on next nav)');
 }
 
 async function cmd_nav(url) {
@@ -155,6 +156,69 @@ async function cmd_screenshot(name) {
   console.log('screenshot ->', file);
 }
 
+// Plain fixed-duration pause — for confirming something animates over time
+// (e.g. diffing two screenshots taken N ms apart) where `scroll` as a delay
+// hack would itself shift page content and contaminate the diff.
+async function cmd_wait(ms) {
+  await page.waitForTimeout(Number(ms) || 1000);
+  console.log('waited', ms || 1000, 'ms');
+}
+
+// Generic text click, exact match, first hit — for one-off buttons that
+// don't warrant a dedicated command (e.g. "Complete", "Post", "Completed").
+async function cmd_click(...words) {
+  const text = words.join(' ');
+  await page.getByText(text, { exact: true }).first().click();
+  await page.waitForTimeout(800);
+  console.log('clicked:', text);
+}
+
+async function cmd_clickTestId(id) {
+  await page.getByTestId(id).click();
+  await page.waitForTimeout(800);
+  console.log('clicked testid:', id);
+}
+
+async function cmd_fillTestId(id, ...words) {
+  const text = words.join(' ');
+  await page.getByTestId(id).fill(text);
+  console.log('filled testid:', id, '->', text);
+}
+
+// Sets the hidden <input type="file"> expo-image-picker's web shim creates
+// on launchCameraAsync/launchImageLibraryAsync (data-testid="file-input").
+// NOT via getByTestId().setInputFiles() — headless Chromium auto-cancels a
+// programmatically .click()'d file input almost immediately (confirmed:
+// input.files stayed empty and the app's capturePhoto() resolved
+// {status:'cancelled'} well within a 1.5s window), so by the time a second
+// driver command could locate the element it was already gone. Must
+// instead arm page.waitForEvent('filechooser') BEFORE the triggering
+// click and race it against that click, matching Playwright's documented
+// file-chooser-interception pattern.
+async function cmd_upload(filePath, ...clickWords) {
+  const clickText = clickWords.join(' ');
+  const [chooser] = await Promise.all([
+    page.waitForEvent('filechooser', { timeout: 10000 }),
+    page.getByText(clickText, { exact: true }).first().click(),
+  ]);
+  await chooser.setFiles(filePath);
+  console.log('uploaded', filePath, 'via click:', clickText);
+}
+
+async function cmd_uploadTestId(filePath, testid) {
+  const [chooser] = await Promise.all([
+    page.waitForEvent('filechooser', { timeout: 10000 }),
+    page.getByTestId(testid).click(),
+  ]);
+  await chooser.setFiles(filePath);
+  console.log('uploaded', filePath, 'via testid:', testid);
+}
+
+async function cmd_countTestId(id) {
+  const n = await page.getByTestId(id).count();
+  console.log('count testid:', id, '->', n);
+}
+
 async function cmd_consoleErrors() {
   console.log('CONSOLE ERRORS:', JSON.stringify(consoleErrors, null, 2));
 }
@@ -174,7 +238,14 @@ const HANDLERS = {
   'click-tab': cmd_clickTab,
   'wait-for': cmd_waitFor,
   scroll: cmd_scroll,
+  wait: cmd_wait,
   screenshot: cmd_screenshot,
+  click: cmd_click,
+  'click-testid': cmd_clickTestId,
+  'fill-testid': cmd_fillTestId,
+  upload: cmd_upload,
+  'upload-testid': cmd_uploadTestId,
+  'count-testid': cmd_countTestId,
   'console-errors': cmd_consoleErrors,
   quit: cmd_quit,
 };

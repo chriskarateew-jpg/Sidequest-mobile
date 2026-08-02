@@ -1,4 +1,4 @@
-// Sidequest — real nearby-place lookup via OpenStreetMap's Overpass API.
+// Gumpa — real nearby-place lookup via OpenStreetMap's Overpass API.
 // No API key: Overpass is free and needs no account, which matters for a
 // solo project (nothing to sign up for before this feature works). Queried
 // only on a local-challenges cache miss (see local-challenges.ts) — never
@@ -100,7 +100,7 @@ async function runQuery(query: string, attempt = 1): Promise<OverpassElement[]> 
       method: 'POST',
       headers: {
         'content-type': 'application/x-www-form-urlencoded',
-        'user-agent': 'Gumption/1.0 (personal project; contact: chriskarateew@gmail.com)',
+        'user-agent': 'Gumpa/1.0 (personal project; contact: chriskarateew@gmail.com)',
       },
       body: `data=${encodeURIComponent(query)}`,
       signal: controller.signal,

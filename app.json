@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Gumption",
-    "slug": "gumption",
+    "name": "Gumpa",
+    "slug": "gumpa",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "gumption",
+    "scheme": "gumpa",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon"
@@ -36,13 +36,21 @@
       [
         "expo-image-picker",
         {
-          "cameraPermission": "Gumption uses your camera to capture proof you completed a quest."
+          "cameraPermission": "Gumpa uses your camera to capture proof you completed a quest."
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Gumption uses your location to suggest tasks tied to real places near you."
+          "locationWhenInUsePermission": "Gumpa uses your location to suggest tasks tied to real places near you."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Gumpa needs access to your screenshots to submit them as proof for tasks that ask for one.",
+          "savePhotosPermission": false,
+          "isAccessMediaLocationEnabled": false
         }
       ],
       "expo-secure-store"
