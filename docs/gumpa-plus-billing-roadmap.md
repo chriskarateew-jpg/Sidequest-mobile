@@ -18,7 +18,7 @@ Stripe's role here is for money going out (buying gift cards, a future web check
 
 ## Phase 1: Legal entity and tax ID
 
-- [ ] Form a single-member LLC in your state of residence (filing fee typically $50 to $500, approval same-day to a couple of weeks depending on state)
+- [x] Form a single-member LLC in your state of residence (filing fee typically $50 to $500, approval same-day to a couple of weeks depending on state)
 - [ ] Set up a registered agent if your state requires one and you don't want to act as your own
 - [ ] Apply for an EIN at irs.gov once the LLC is approved (free, instant online)
 
