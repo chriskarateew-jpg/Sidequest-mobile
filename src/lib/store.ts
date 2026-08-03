@@ -39,6 +39,11 @@ interface PersistedState {
   localChallenges: Challenge[];
   localChallengesFetchedAt: number | null;
   locationOptOut: boolean;
+  // The daily/weekly/monthly period key (see periodKeyFor below) as of the
+  // last time the user opened the Tasks tab — compared against the current
+  // period key to drive the "New!" badge on the tab (see hasNewTasks). Null
+  // for a cadence never seen yet, which reads as "new" same as a rollover.
+  lastSeenQuestPeriods: Record<Cadence, string | null>;
 }
 
 const DEFAULT_STATE: PersistedState = {
@@ -50,6 +55,7 @@ const DEFAULT_STATE: PersistedState = {
   localChallenges: [],
   localChallengesFetchedAt: null,
   locationOptOut: false,
+  lastSeenQuestPeriods: { daily: null, weekly: null, monthly: null },
 };
 
 // ---------- period keys ----------
@@ -201,6 +207,13 @@ interface GumpaStore extends PersistedState {
 
   getSuggestions: () => { daily: Challenge[]; weekly: Challenge[]; monthly: Challenge[] };
 
+  // True when any of today's daily/weekly/monthly period keys differ from
+  // what was recorded the last time the Tasks tab was opened — drives the
+  // animated "New!" badge on the bottom nav (see bottom-nav.tsx).
+  hasNewTasks: () => boolean;
+  // Call when the Tasks tab gains focus to clear the badge.
+  markQuestsSeen: () => void;
+
   isCompleted: (c: Challenge) => boolean;
   completePhoto: (id: string, photoUri: string) => Challenge | null;
   logStreakPhoto: (id: string, photoUri: string) => { challenge: Challenge; progress: number; target: number; justCompleted: boolean } | null;
@@ -243,6 +256,7 @@ function schedulePersist(get: () => GumpaStore) {
       localChallenges: s.localChallenges,
       localChallengesFetchedAt: s.localChallengesFetchedAt,
       locationOptOut: s.locationOptOut,
+      lastSeenQuestPeriods: s.lastSeenQuestPeriods,
     };
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(toSave)).catch(() => {
       // best-effort persistence — in-memory state is still correct this session
@@ -290,6 +304,18 @@ export const useGumpaStore = create<GumpaStore>((set, get) => ({
       weekly: pickSuggestions('weekly', 3, local),
       monthly: pickSuggestions('monthly', 1, local),
     };
+  },
+
+  hasNewTasks: () => {
+    const seen = get().lastSeenQuestPeriods;
+    return (['daily', 'weekly', 'monthly'] as Cadence[]).some((cadence) => seen[cadence] !== periodKeyFor(cadence));
+  },
+
+  markQuestsSeen: () => {
+    set({
+      lastSeenQuestPeriods: { daily: periodKeyFor('daily'), weekly: periodKeyFor('weekly'), monthly: periodKeyFor('monthly') },
+    });
+    schedulePersist(get);
   },
 
   isCompleted: (c) => get().completions[`${c.id}:${periodKeyFor(c.cadence)}`]?.status === 'complete',

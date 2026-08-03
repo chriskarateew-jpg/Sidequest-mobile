@@ -1,5 +1,5 @@
-import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -21,7 +21,18 @@ export default function QuestsScreen() {
   const insets = useSafeAreaInsets();
   const xp = useGumpaStore((s) => s.xp);
   const getSuggestions = useGumpaStore((s) => s.getSuggestions);
+  const markQuestsSeen = useGumpaStore((s) => s.markQuestsSeen);
   const [taskFilter, setTaskFilter] = useState<Cadence | 'all'>('all');
+
+  // Clears the bottom nav's "New!" badge every time this tab gains focus,
+  // not just on first mount — native-stack keeps pushed screens alive in
+  // the background, so a plain mount-only effect would miss a same-period
+  // revisit after the badge was already cleared once and re-armed later.
+  useFocusEffect(
+    useCallback(() => {
+      markQuestsSeen();
+    }, [markQuestsSeen])
+  );
 
   // recomputed whenever xp changes (every completion)
   const sugg = useMemo(() => getSuggestions(), [getSuggestions, xp]);

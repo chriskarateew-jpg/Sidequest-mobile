@@ -67,15 +67,34 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <StatusBar style="dark" />
       {token ? (
-        <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
-          <Stack.Screen name="index" options={{ animation: 'none' }} />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            animation: 'slide_from_right',
+            // Lets a right-swipe (of any speed, from anywhere on screen —
+            // not just the left edge) pop back to the previous screen, on
+            // top of the platform's own edge-swipe default. Native-stack's
+            // gesture handling is backed by react-native-screens' native
+            // pop gesture (UIKit/Fragment transitions), not gesture-handler
+            // pan responders, so no extra GestureHandlerRootView wiring is
+            // needed for this.
+            gestureEnabled: true,
+            gestureDirection: 'horizontal',
+            fullScreenGestureEnabled: true,
+          }}>
+          <Stack.Screen name="index" options={{ animation: 'none', gestureEnabled: false }} />
           <Stack.Screen name="quests" />
           <Stack.Screen name="completed" />
           <Stack.Screen name="friends" />
           <Stack.Screen name="groups" />
           <Stack.Screen name="rewards" />
           <Stack.Screen name="profile" />
-          <Stack.Screen name="submit-review" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="settings" />
+          <Stack.Screen name="faq" />
+          <Stack.Screen
+            name="submit-review"
+            options={{ presentation: 'modal', animation: 'slide_from_bottom', gestureDirection: 'vertical' }}
+          />
         </Stack>
       ) : (
         <AuthGateway />

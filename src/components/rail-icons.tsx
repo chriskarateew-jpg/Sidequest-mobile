@@ -185,3 +185,69 @@ export function LevelIcon({ size = 20, color = '#fff' }: IconProps) {
     </Svg>
   );
 }
+
+// Gear mark — links to the Settings screen from Profile.
+export function SettingsIcon({ size = 20, color = '#fff' }: IconProps) {
+  return (
+    <Svg viewBox="0 0 24 24" width={size} height={size} fill="none">
+      <Circle cx="12" cy="12" r="3" stroke={color} strokeWidth={2} />
+      <Path
+        d="M12 3.5v2.1M12 18.4v2.1M20.5 12h-2.1M5.6 12H3.5M17.66 6.34l-1.49 1.49M7.83 16.17l-1.49 1.49M17.66 17.66l-1.49-1.49M7.83 7.83L6.34 6.34"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
+
+// A simple question mark in a circle — links FAQ rows from Settings.
+export function QuestionIcon({ size = 20, color = '#fff' }: IconProps) {
+  return (
+    <Svg viewBox="0 0 24 24" width={size} height={size} fill="none">
+      <Circle cx="12" cy="12" r="8.5" stroke={color} strokeWidth={2} />
+      <Path
+        d="M9.6 9.6a2.4 2.4 0 1 1 3.55 2.1c-.66.38-1.15.86-1.15 1.6v.4"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Circle cx="12" cy="16.9" r="1.05" fill={color} />
+    </Svg>
+  );
+}
+
+// Chevron used to hint a row is expandable/navigable in Settings/FAQ lists.
+export function ChevronRightIcon({ size = 20, color = '#fff' }: IconProps) {
+  return (
+    <Svg viewBox="0 0 24 24" width={size} height={size} fill="none">
+      <Path d="M9 5l7 7-7 7" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+// Chevron used for expand/collapse state on an accordion row (rotated via
+// the caller's transform, not baked into the path).
+export function ChevronDownIcon({ size = 20, color = '#fff' }: IconProps) {
+  return (
+    <Svg viewBox="0 0 24 24" width={size} height={size} fill="none">
+      <Path d="M5 9l7 7 7-7" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+// Lightbulb mark — the "have a recommendation?" prompt in Settings.
+export function BulbIcon({ size = 20, color = '#fff' }: IconProps) {
+  return (
+    <Svg viewBox="0 0 24 24" width={size} height={size} fill="none">
+      <Path
+        d="M12 3.5a5.8 5.8 0 0 0-3.3 10.56c.5.35.8.9.8 1.5v.44h5v-.44c0-.6.3-1.15.8-1.5A5.8 5.8 0 0 0 12 3.5Z"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinejoin="round"
+      />
+      <Path d="M9.5 19h5M10.3 21.5h3.4" stroke={color} strokeWidth={2} strokeLinecap="round" />
+    </Svg>
+  );
+}

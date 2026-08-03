@@ -36,6 +36,7 @@ interface AuthState {
   requestPasswordReset: (email: string) => Promise<void>;
   setPrivacy: (isPublic: boolean) => Promise<string | null>;
   setAvatar: (base64: string, mediaType: string) => Promise<string | null>;
+  sendRecommendation: (message: string) => Promise<string | null>;
 }
 
 async function getStoredToken(): Promise<string | null> {
@@ -175,6 +176,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (!res.ok || !data.avatarKey) return data.error ?? 'Something went wrong. Try again.';
       const avatarKey = data.avatarKey;
       set((s) => (s.user ? { user: { ...s.user, avatarKey } } : s));
+      return null;
+    } catch {
+      return 'Could not reach the server. Check your connection.';
+    }
+  },
+
+  sendRecommendation: async (message) => {
+    const { token } = get();
+    if (!token) return 'Not logged in.';
+    try {
+      const res = await apiFetch('/account/recommend', { method: 'POST', token, body: { message } });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) return data.error ?? 'Something went wrong. Try again.';
       return null;
     } catch {
       return 'Could not reach the server. Check your connection.';

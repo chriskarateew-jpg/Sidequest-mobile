@@ -190,7 +190,7 @@ export default function GroupsScreen() {
         ListHeaderComponent={
           <View>
             <BackButton />
-            <Text style={styles.pageTitle}>Groups</Text>
+            <Text style={styles.pageTitle}>Gumpa Groups</Text>
             <Text style={styles.pageDesc}>
               Small crews keep each other honest. See who's posting this week and hold the group accountable.
             </Text>
@@ -544,7 +544,7 @@ function PotsSection({ groupId, token, show }: { groupId: string; token: string 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.bg },
   content: { paddingHorizontal: Spacing.three, paddingBottom: Spacing.six },
-  pageTitle: { fontSize: 26, fontWeight: '800', color: Colors.ink, marginBottom: 6 },
+  pageTitle: { fontSize: 26, fontWeight: '800', color: Colors.accent, marginBottom: 6, textAlign: 'center' },
   pageDesc: { color: Colors.muted, fontSize: 13.5, lineHeight: 18, marginBottom: Spacing.three },
   modeRow: { flexDirection: 'row', gap: 8, marginBottom: Spacing.two + 2 },
   modeBtn: {

@@ -1,6 +1,10 @@
 import { requireAuth } from './auth';
 import type { Env } from './env';
+import { sendRecommendationEmail } from './email';
 import { base64ToBytes, error, json, safeJson } from './http';
+import { checkRateLimit } from './ratelimit';
+
+const MAX_RECOMMENDATION_LENGTH = 2000;
 
 export async function handleSetPrivacy(request: Request, env: Env): Promise<Response> {
   const auth = await requireAuth(request, env);
@@ -43,4 +47,29 @@ export async function handleSetAvatar(request: Request, env: Env): Promise<Respo
   await env.DB.prepare('UPDATE users SET avatar_key = ? WHERE id = ?').bind(key, auth.id).run();
 
   return json({ ok: true, avatarKey: key });
+}
+
+// Sends a user-submitted recommendation to the app's own inbox (see
+// sendRecommendationEmail) — not stored anywhere, purely a mail relay.
+// Rate-limited per user since it's an outbound-email trigger, same as the
+// verification/reset-email endpoints in auth.ts.
+export async function handleRecommend(request: Request, env: Env): Promise<Response> {
+  const auth = await requireAuth(request, env);
+  if (!auth) return error('Not authenticated', 401);
+
+  if (!(await checkRateLimit(env, `recommend:${auth.id}`, 5, 3600))) {
+    return error('Too many requests. Try again later.', 429);
+  }
+
+  const body = await safeJson(request);
+  const message = typeof body?.message === 'string' ? body.message.trim() : '';
+  if (!message) return error('Missing message');
+  if (message.length > MAX_RECOMMENDATION_LENGTH) {
+    return error(`Message must be ${MAX_RECOMMENDATION_LENGTH} characters or fewer`);
+  }
+
+  const sent = await sendRecommendationEmail(env, auth.username, message);
+  if (!sent) return error("Couldn't send your recommendation. Try again later.", 502);
+
+  return json({ ok: true });
 }

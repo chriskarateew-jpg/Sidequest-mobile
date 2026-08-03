@@ -1,88 +1,34 @@
 import { Image } from 'expo-image';
+import { router } from 'expo-router';
 import type { ComponentType } from 'react';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BackButton } from '@/components/back-button';
-import { CameraIcon, CoinIcon, LevelIcon, ProfileIcon, StreakIcon } from '@/components/rail-icons';
+import { CameraIcon, CoinIcon, LevelIcon, ProfileIcon, SettingsIcon, StreakIcon } from '@/components/rail-icons';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { photoUrl } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
 import { pickPhotoFromLibrary } from '@/lib/photo';
-import { describeLocalChallengesResult, levelInfo, useGumpaStore } from '@/lib/store';
+import { levelInfo, useGumpaStore } from '@/lib/store';
 import { useToastStore } from '@/lib/toast';
-
-function relativeTime(ts: number): string {
-  const diff = Date.now() - ts;
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
-  const logout = useAuthStore((s) => s.logout);
-  const setPrivacy = useAuthStore((s) => s.setPrivacy);
   const setAvatar = useAuthStore((s) => s.setAvatar);
-  const resendVerification = useAuthStore((s) => s.resendVerification);
   const show = useToastStore((s) => s.show);
   const tokens = useGumpaStore((s) => s.tokens);
   const xp = useGumpaStore((s) => s.xp);
   const currentStreak = useGumpaStore((s) => s.currentStreak);
-  const localChallengesFetchedAt = useGumpaStore((s) => s.localChallengesFetchedAt);
-  const refreshLocalChallenges = useGumpaStore((s) => s.refreshLocalChallenges);
-  const clearLocalArea = useGumpaStore((s) => s.clearLocalArea);
 
-  const [updatingPrivacy, setUpdatingPrivacy] = useState(false);
-  const [resending, setResending] = useState(false);
-  const [refreshingLocation, setRefreshingLocation] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   if (!user) return null;
 
   const lvl = levelInfo(xp);
   const streak = currentStreak();
-  const localTasksEnabled = localChallengesFetchedAt !== null;
-
-  const handleTogglePrivacy = async (value: boolean) => {
-    setUpdatingPrivacy(true);
-    const err = await setPrivacy(value);
-    setUpdatingPrivacy(false);
-    show(err ?? (value ? 'Your quests now post to the public feed too.' : 'Your quests only post to your friends feed now.'));
-  };
-
-  const handleResend = async () => {
-    setResending(true);
-    const err = await resendVerification();
-    setResending(false);
-    show(err ?? 'Verification email sent. Check your inbox.');
-  };
-
-  const handleToggleLocalTasks = async (value: boolean) => {
-    if (!value) {
-      clearLocalArea();
-      return;
-    }
-    setRefreshingLocation(true);
-    const result = await refreshLocalChallenges(true);
-    setRefreshingLocation(false);
-    const message = describeLocalChallengesResult(result);
-    if (message) show(message);
-  };
-
-  const handleRefreshLocation = async () => {
-    setRefreshingLocation(true);
-    const result = await refreshLocalChallenges(true);
-    setRefreshingLocation(false);
-    const message = describeLocalChallengesResult(result);
-    if (message) show(message);
-  };
 
   const handleChangeAvatar = async () => {
     const result = await pickPhotoFromLibrary();
@@ -99,9 +45,16 @@ export default function ProfileScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={[styles.content, { paddingTop: insets.top + Spacing.two }]}>
-      <BackButton />
-      <Text style={styles.pageTitle}>Profile</Text>
-
+      <View style={styles.headerRow}>
+        <BackButton />
+        <Pressable
+          testID="settings-button"
+          hitSlop={8}
+          style={styles.settingsBtn}
+          onPress={() => router.push('/settings')}>
+          <SettingsIcon size={18} color={Colors.ink} />
+        </Pressable>
+      </View>
       <View style={styles.avatarSection}>
         <Pressable testID="avatar-change-button" style={styles.avatarWrap} onPress={handleChangeAvatar} disabled={uploadingAvatar}>
           {user.avatarKey ? (
@@ -137,61 +90,9 @@ export default function ProfileScreen() {
         {user.emailVerified ? (
           <Text style={styles.verified}>Verified</Text>
         ) : (
-          <View style={styles.unverifiedRow}>
-            <Text style={styles.unverified}>Not verified</Text>
-            <Pressable onPress={handleResend} disabled={resending} style={styles.resendBtn}>
-              <Text style={styles.resendBtnText}>{resending ? 'Sending…' : 'Resend email'}</Text>
-            </Pressable>
-          </View>
+          <Text style={styles.unverified}>Not verified. Resend from Settings.</Text>
         )}
       </View>
-
-      <View style={styles.card}>
-        <View style={styles.privacyRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.privacyTitle}>Share to public feed</Text>
-            <Text style={styles.privacyDesc}>
-              {user.isPublic
-                ? 'On: your completed quests show up on the public feed as well as your friends feed.'
-                : 'Off: your completed quests only show up on your friends feed.'}
-            </Text>
-          </View>
-          <Switch
-            value={user.isPublic}
-            onValueChange={handleTogglePrivacy}
-            disabled={updatingPrivacy}
-            trackColor={{ true: Colors.accent, false: Colors.line }}
-          />
-        </View>
-      </View>
-
-      <View style={styles.card}>
-        <View style={styles.privacyRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.privacyTitle}>Local tasks</Text>
-            <Text style={styles.privacyDesc}>
-              {localTasksEnabled
-                ? `Using your location for area-specific tasks. Last updated ${relativeTime(localChallengesFetchedAt!)}.`
-                : 'Off: turn on to get tasks tied to real spots near you.'}
-            </Text>
-          </View>
-          <Switch
-            value={localTasksEnabled}
-            onValueChange={handleToggleLocalTasks}
-            disabled={refreshingLocation}
-            trackColor={{ true: Colors.accent, false: Colors.line }}
-          />
-        </View>
-        {localTasksEnabled && (
-          <Pressable onPress={handleRefreshLocation} disabled={refreshingLocation} style={styles.resendBtn}>
-            <Text style={styles.resendBtnText}>{refreshingLocation ? 'Refreshing…' : 'Refresh now'}</Text>
-          </Pressable>
-        )}
-      </View>
-
-      <Pressable style={styles.logoutBtn} onPress={logout}>
-        <Text style={styles.logoutBtnText}>Log out</Text>
-      </Pressable>
     </ScrollView>
   );
 }
@@ -218,7 +119,16 @@ function Stat({ Icon, value, label }: { Icon: ComponentType<{ size?: number; col
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.bg },
   content: { padding: Spacing.three, paddingBottom: Spacing.six },
-  pageTitle: { fontSize: 26, fontWeight: '800', color: Colors.ink, marginBottom: Spacing.three },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  settingsBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.accentSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.three,
+  },
   avatarSection: { alignItems: 'center', marginBottom: Spacing.three },
   avatarWrap: { position: 'relative' },
   avatarImg: { width: 84, height: 84, borderRadius: 42, backgroundColor: Colors.line },
@@ -263,20 +173,5 @@ const styles = StyleSheet.create({
   xpFill: { height: '100%', backgroundColor: Colors.accent, borderRadius: 999 },
   xpHint: { fontSize: 11, fontWeight: '700', color: Colors.muted, marginTop: 6, textAlign: 'center' },
   verified: { color: Colors.green, fontWeight: '800', fontSize: 12.5, marginTop: 6 },
-  unverifiedRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
-  unverified: { color: Colors.red, fontWeight: '800', fontSize: 12.5 },
-  resendBtn: { backgroundColor: Colors.accentSoft, borderRadius: Radius.sm, paddingHorizontal: 12, paddingVertical: 7 },
-  resendBtnText: { color: Colors.accent, fontWeight: '800', fontSize: 12 },
-  privacyRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
-  privacyTitle: { fontSize: 15, fontWeight: '800', color: Colors.ink, marginBottom: 3 },
-  privacyDesc: { fontSize: 12.5, color: Colors.muted, lineHeight: 18 },
-  logoutBtn: {
-    borderWidth: 1.5,
-    borderColor: Colors.line,
-    borderRadius: Radius.sm,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: Spacing.two,
-  },
-  logoutBtnText: { color: Colors.red, fontWeight: '800', fontSize: 15 },
+  unverified: { color: Colors.red, fontWeight: '800', fontSize: 12.5, marginTop: 6 },
 });

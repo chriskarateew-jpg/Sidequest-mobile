@@ -2,12 +2,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import type { Href } from 'expo-router';
 import { router } from 'expo-router';
 import type { ComponentType } from 'react';
+import { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FriendsIcon, GroupsIcon, ProfileIcon, RewardsIcon, TasksIcon } from '@/components/rail-icons';
-import { Colors, Shadow, Spacing } from '@/constants/theme';
+import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
+import { useGumpaStore } from '@/lib/store';
 
 // Height of the bar's own content, excluding the device's bottom safe-area
 // inset — screens add insets.bottom on top of this to size their scroll
@@ -28,11 +30,23 @@ const TAB_ITEMS: { href: Href; Icon: ComponentType<{ size?: number; color?: stri
 // content scrolls above it.
 export function BottomNav() {
   const insets = useSafeAreaInsets();
+  // Calling the selector (not just reading the store's function reference)
+  // is what makes this reactive — zustand re-runs the selector on every
+  // state change and only re-renders when the returned boolean flips, so
+  // completing the last old-period task or revisiting Tasks (which calls
+  // markQuestsSeen) clears the badge immediately.
+  const hasNewTasks = useGumpaStore((s) => s.hasNewTasks());
 
   return (
     <View style={[styles.bar, { paddingBottom: insets.bottom + Spacing.two }]}>
       {TAB_ITEMS.map((item) => (
-        <TabButton key={item.label} href={item.href} Icon={item.Icon} label={item.label} />
+        <TabButton
+          key={item.label}
+          href={item.href}
+          Icon={item.Icon}
+          label={item.label}
+          showNewBadge={item.href === '/quests' && hasNewTasks}
+        />
       ))}
     </View>
   );
@@ -42,10 +56,12 @@ function TabButton({
   href,
   Icon,
   label,
+  showNewBadge,
 }: {
   href: Href;
   Icon: ComponentType<{ size?: number; color?: string }>;
   label: string;
+  showNewBadge?: boolean;
 }) {
   const scale = useSharedValue(1);
   const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
@@ -56,14 +72,34 @@ function TabButton({
   };
 
   return (
-    <Pressable onPress={handlePress} hitSlop={6} style={styles.item}>
+    <Pressable testID={`nav-${label.toLowerCase()}`} onPress={handlePress} hitSlop={6} style={styles.item}>
       <Animated.View style={style}>
-        <LinearGradient colors={[Colors.accent, Colors.accent2]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.button}>
-          <Icon size={17} color="#fff" />
-        </LinearGradient>
+        <View>
+          <LinearGradient colors={[Colors.accent, Colors.accent2]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.button}>
+            <Icon size={17} color="#fff" />
+          </LinearGradient>
+          {showNewBadge && <NewBadge />}
+        </View>
       </Animated.View>
       <Text style={styles.label}>{label}</Text>
     </Pressable>
+  );
+}
+
+// Draws attention to a cadence rollover (new daily/weekly/monthly tasks are
+// ready) via a small pulsing pill in the button's corner — cleared by
+// markQuestsSeen the moment the Tasks tab is opened (see quests.tsx).
+function NewBadge() {
+  const pulse = useSharedValue(1);
+  useEffect(() => {
+    pulse.value = withRepeat(withSequence(withTiming(1.18, { duration: 550 }), withTiming(1, { duration: 550 })), -1, true);
+  }, [pulse]);
+  const style = useAnimatedStyle(() => ({ transform: [{ scale: pulse.value }] }));
+
+  return (
+    <Animated.View style={[styles.newBadge, style]}>
+      <Text style={styles.newBadgeText}>New!</Text>
+    </Animated.View>
   );
 }
 
@@ -81,6 +117,18 @@ const styles = StyleSheet.create({
     borderTopColor: Colors.line,
   },
   item: { flex: 1, alignItems: 'center' },
+  newBadge: {
+    position: 'absolute',
+    top: -7,
+    right: -12,
+    backgroundColor: Colors.red,
+    borderRadius: Radius.pill,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderWidth: 1.5,
+    borderColor: Colors.card,
+  },
+  newBadgeText: { fontSize: 8, fontWeight: '800', color: '#fff' },
   button: {
     width: 40,
     height: 40,

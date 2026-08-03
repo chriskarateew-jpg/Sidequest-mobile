@@ -209,23 +209,52 @@ export async function handleRequestPasswordReset(request: Request, env: Env): Pr
   return json({ ok: true });
 }
 
-export function handleResetPasswordPage(request: Request): Response {
+// Checks the token's actual DB state up front (not just its format) so a
+// dead link says exactly why — invalid, already used, or expired — the
+// moment the page loads, instead of only failing after the user types a
+// new password and submits (see handleResetPassword for the same
+// three-way split, since a token can still go stale between page-load and
+// submit — this is a UX improvement on top of that check, not a replacement).
+export async function handleResetPasswordPage(request: Request, env: Env): Promise<Response> {
   const token = new URL(request.url).searchParams.get('token') ?? '';
   if (!RESET_TOKEN_RE.test(token)) {
     return htmlPage('<h1>Invalid link</h1><p>This reset link is malformed.</p>');
+  }
+
+  const tokenHash = await hashToken(token);
+  const row = await env.DB.prepare(
+    "SELECT expires_at, used_at FROM auth_tokens WHERE token_hash = ? AND purpose = 'reset_password'"
+  )
+    .bind(tokenHash)
+    .first<{ expires_at: number; used_at: number | null }>();
+
+  if (!row) {
+    return htmlPage('<h1>Invalid link</h1><p>This reset link is invalid. Request a new one from the Gumpa app.</p>');
+  }
+  if (row.used_at) {
+    return htmlPage('<h1>Already used</h1><p>This reset link has already been used. Request a new one from the Gumpa app.</p>');
+  }
+  if (row.expires_at < Date.now()) {
+    return htmlPage('<h1>Link expired</h1><p>This reset link has expired. Request a new one from the Gumpa app.</p>');
   }
 
   return htmlPage(`
     <h1>Set a new password</h1>
     <p>Choose a new password for your Gumpa account.</p>
     <input id="pw" type="password" placeholder="New password (min 8 characters)" />
-    <button onclick="submitReset()">Reset password</button>
+    <button id="submitBtn" onclick="submitReset()">Reset password</button>
     <div id="msg" class="msg"></div>
     <script>
       async function submitReset() {
         var pw = document.getElementById('pw').value;
         var msg = document.getElementById('msg');
+        var btn = document.getElementById('submitBtn');
         if (pw.length < 8) { msg.textContent = 'Password must be at least 8 characters.'; return; }
+        // Guards against a double-click/double-tap firing two submissions —
+        // the second would otherwise hit the "already used" case and read
+        // as a confusing false failure right after a successful reset.
+        if (btn.disabled) return;
+        btn.disabled = true;
         msg.textContent = 'Working…';
         try {
           var res = await fetch('/auth/reset-password', {
@@ -235,8 +264,10 @@ export function handleResetPasswordPage(request: Request): Response {
           });
           var data = await res.json();
           msg.textContent = res.ok ? 'Password updated — you can go back to the app and log in.' : (data.error || 'Something went wrong.');
+          if (!res.ok) btn.disabled = false;
         } catch (e) {
           msg.textContent = 'Network error — try again.';
+          btn.disabled = false;
         }
       }
     </script>
@@ -259,9 +290,21 @@ export async function handleResetPassword(request: Request, env: Env): Promise<R
     .bind(tokenHash)
     .first<TokenRow>();
 
-  if (!row || row.used_at || row.expires_at < Date.now()) {
-    return error('This reset link is invalid or has expired', 400);
-  }
+  // Split into three distinct outcomes (used to be one generic "invalid or
+  // expired" message) so a real recurrence is actually diagnosable instead
+  // of always reading as "expired" regardless of the real cause — e.g. a
+  // double-submitted link now correctly says "already used," not "expired."
+  if (!row) return error('This reset link is invalid. Request a new one from the Gumpa app.', 400);
+  if (row.used_at) return error('This reset link has already been used. Request a new one from the Gumpa app.', 400);
+  if (row.expires_at < Date.now()) return error('This reset link has expired. Request a new one from the Gumpa app.', 400);
+
+  const user = await env.DB.prepare('SELECT password_hash, password_salt FROM users WHERE id = ?')
+    .bind(row.user_id)
+    .first<{ password_hash: string; password_salt: string }>();
+  if (!user) return error('User not found', 404);
+
+  const sameAsCurrent = await verifyPassword(newPassword, user.password_hash, user.password_salt);
+  if (sameAsCurrent) return error('New password must be different from your current password');
 
   const { hash, salt } = await hashPassword(newPassword);
   await env.DB.batch([

@@ -196,7 +196,7 @@ function FriendsContent({ token, myUserId, insetTop }: { token: string; myUserId
       ListHeaderComponent={
         <View>
           <BackButton />
-          <Text style={styles.pageTitle}>Friends</Text>
+          <Text style={styles.pageTitle}>Gumpa Friends</Text>
           <Text style={styles.pageDesc}>See who's showing up this week, and nudge the ones who aren't.</Text>
 
           <TextInput
@@ -362,7 +362,7 @@ function RequestButton({ status, onPress }: { status: SearchResult['status']; on
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.bg },
   content: { paddingHorizontal: Spacing.three, paddingBottom: Spacing.six },
-  pageTitle: { fontSize: 26, fontWeight: '800', color: Colors.ink, marginBottom: 6 },
+  pageTitle: { fontSize: 26, fontWeight: '800', color: Colors.accent, marginBottom: 6, textAlign: 'center' },
   pageDesc: { color: Colors.muted, fontSize: 13.5, lineHeight: 18, marginBottom: Spacing.three },
   input: {
     backgroundColor: Colors.card,

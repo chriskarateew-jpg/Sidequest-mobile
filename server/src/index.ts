@@ -2,7 +2,7 @@
 // verification, all in one small Worker backed by D1 (users/posts/friends),
 // R2 (photo storage), and KV (rate limiting).
 
-import { handleSetAvatar, handleSetPrivacy } from './account';
+import { handleRecommend, handleSetAvatar, handleSetPrivacy } from './account';
 import {
   handleLogin,
   handleMe,
@@ -46,11 +46,12 @@ export default {
     if (method === 'GET' && pathname === '/auth/verify') return handleVerifyEmail(request, env);
     if (method === 'POST' && pathname === '/auth/resend-verification') return handleResendVerification(request, env);
     if (method === 'POST' && pathname === '/auth/request-password-reset') return handleRequestPasswordReset(request, env);
-    if (method === 'GET' && pathname === '/auth/reset-password-page') return handleResetPasswordPage(request);
+    if (method === 'GET' && pathname === '/auth/reset-password-page') return handleResetPasswordPage(request, env);
     if (method === 'POST' && pathname === '/auth/reset-password') return handleResetPassword(request, env);
 
     if (method === 'POST' && pathname === '/account/privacy') return handleSetPrivacy(request, env);
     if (method === 'POST' && pathname === '/account/avatar') return handleSetAvatar(request, env);
+    if (method === 'POST' && pathname === '/account/recommend') return handleRecommend(request, env);
 
     if (method === 'POST' && pathname === '/complete') return handleComplete(request, env);
     if (method === 'GET' && pathname === '/feed/public') return handleListFeed(request, env, 'public');
