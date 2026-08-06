@@ -1,0 +1,279 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f5f4f0;
+  --card: #ffffff;
+  --ink: #111214;
+  --muted: #6e7178;
+  --line: #e5e3dd;
+  --accent: #f3680c;
+  --accent-soft: #fde8d9;
+  --red: #c0392b;
+  --green: #2a8f4f;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16171a;
+    --card: #1f2024;
+    --ink: #f1f1f2;
+    --muted: #9a9ca3;
+    --line: #2c2d31;
+    --accent-soft: #3a2413;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+#root {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px 20px 80px;
+}
+
+h1 {
+  font-size: 22px;
+  font-weight: 800;
+  margin: 0 0 4px;
+}
+
+h2 {
+  font-size: 17px;
+  font-weight: 800;
+  margin: 0 0 12px;
+}
+
+p {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+a {
+  color: var(--accent);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+.field label {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--muted);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+input[type='text'],
+input[type='password'],
+input[type='number'],
+textarea,
+select {
+  background: var(--bg);
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  color: var(--ink);
+  font-family: inherit;
+}
+
+textarea {
+  min-height: 70px;
+  resize: vertical;
+}
+
+.row {
+  display: flex;
+  gap: 12px;
+}
+
+.row > .field {
+  flex: 1;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13.5px;
+  padding: 6px 0;
+}
+
+.checkbox-row input {
+  margin-top: 3px;
+}
+
+button {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  border-radius: 10px;
+  border: 1.5px solid transparent;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+
+button.primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+button.primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+button.secondary {
+  background: transparent;
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+button.link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  padding: 4px 0;
+}
+
+button.danger {
+  background: none;
+  border: none;
+  color: var(--red);
+  font-weight: 800;
+  font-size: 12.5px;
+  padding: 4px 8px;
+}
+
+.error-banner {
+  background: #fbe4e1;
+  border: 1px solid var(--red);
+  color: var(--red);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+.warning-banner {
+  background: #fff4de;
+  border: 1px solid #c9922a;
+  color: #8a5a00;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  margin-bottom: 14px;
+  white-space: pre-line;
+}
+
+.filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.filters select {
+  padding: 6px 10px;
+  font-size: 12.5px;
+}
+
+.task-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.task-row:last-child {
+  border-bottom: none;
+}
+
+.task-main {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.task-title {
+  font-weight: 700;
+  font-size: 14.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-meta {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  margin-right: 6px;
+}
+
+.badge.inactive {
+  background: var(--line);
+  color: var(--muted);
+}
+
+.task-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.prompt-preview {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  max-height: 320px;
+  overflow-y: auto;
+}

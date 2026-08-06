@@ -10,6 +10,7 @@ import type { Cadence, ProofType, VerifyType } from './tokens';
 import type { Env } from './env';
 import { error, json, safeJson } from './http';
 import { parseOptionalLocation, type LocationFields } from './location-fields';
+import { buildPrompt } from './verify';
 
 const VALID_CADENCES: Cadence[] = ['daily', 'weekly', 'monthly'];
 const VALID_CATS = ['fitness', 'finance', 'social', 'courage', 'explore', 'mind'];
@@ -352,4 +353,21 @@ export async function handleAdminDeleteChallenge(request: Request, env: Env, id:
   const result = await env.DB.prepare('UPDATE dev_challenges SET active = 0, updated_at = ? WHERE id = ?').bind(Date.now(), id).run();
   if (result.meta.changes === 0) return error('Not found', 404);
   return json({ ok: true });
+}
+
+// Read-only — lets the dashboard show exactly what /verify would send to
+// Claude for this task (docs/task-database-roadmap.md Phase 5), by calling
+// the same buildPrompt verify.ts actually uses rather than a reimplementation
+// that could drift out of sync. Works on inactive/draft rows too, since
+// that's exactly when a developer most wants to check the prompt before
+// publishing.
+export async function handleAdminPreviewPrompt(request: Request, env: Env, id: string): Promise<Response> {
+  const auth = await requireDeveloper(request, env);
+  if (!auth) return error('Not found', 404);
+
+  const row = await env.DB.prepare('SELECT * FROM dev_challenges WHERE id = ?').bind(id).first<DevChallengeRow>();
+  if (!row) return error('Not found', 404);
+
+  const prompt = buildPrompt(row.title, row.desc, row.proof_accept ?? undefined, row.proof_reject ?? undefined);
+  return json({ prompt });
 }

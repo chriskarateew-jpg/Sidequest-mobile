@@ -1,6 +1,9 @@
+// PATCH/DELETE are needed by the admin dashboard (docs/task-database-roadmap.md
+// Phase 5) — a real browser, unlike the Expo app's native fetch, enforces
+// CORS preflight and would silently block those methods without this.
 export const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'content-type, authorization',
 };
 

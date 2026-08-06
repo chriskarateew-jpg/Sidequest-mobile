@@ -359,46 +359,87 @@ yet (migrations, `verify.ts`, `dev-challenges.ts`, `catalog.ts`,
   against the pre-existing `data.ts` check it mirrors, not by an actual
   HTTP round trip. Covered by Phase 6's end-to-end pass once Phase 5 exists.
 
-## Phase 5 — Standalone web dashboard
+## Phase 5 — Standalone web dashboard ✅ built and smoke-tested locally (2026-08-06)
 
-- [ ] New lightweight web app (recommend Vite + React, deployed to
-      Cloudflare Pages) — not part of the Expo app bundle.
-- [ ] Auth: reuse the existing email/password login endpoint, store the JWT,
-      send it as a Bearer token to the admin API. No new auth system.
-- [ ] Views:
-  - List all tasks (active + inactive) with the fields from
-    `toAdminShape` plus the new Phase 1 fields, filterable by cadence/
-    category/active state — this is the "easy to visualize" requirement.
-  - **Add**: a "New task" form (Title, Description, Token Reward, cadence,
-    category, verify type, proof type, streak target (conditional),
+- [x] New lightweight web app: Vite + React + TypeScript, hand-scaffolded
+      (not `npm create vite` interactively) at `dashboard/` — a sibling of
+      `server/`, not part of the Expo app bundle at all. `dashboard/package.json`
+      has a `deploy` script (`wrangler pages deploy dist --project-name=
+      gumpa-dashboard`) for later, **not run yet** — Cloudflare Pages deploy
+      is a production-affecting action, same gating as `wrangler deploy`/
+      `wrangler d1 execute --remote`. Say the word when ready.
+- [x] Auth: `dashboard/src/pages/Login.tsx` calls the existing
+      `POST /auth/login` (`dashboard/src/api.ts`'s `login`), stores the JWT
+      in `localStorage`, sends it as `Bearer` on every `/admin/*` call. No
+      new auth system. A non-developer login sees a plain "not found" state
+      (mirrors `requireDeveloper`'s 404-not-401 treatment, same as the Expo
+      dev panel).
+- [x] Views (`dashboard/src/pages/`):
+  - `TaskList.tsx` — active + inactive, filterable by cadence/category/
+    active state.
+  - `TaskForm.tsx` — one form for both create and edit: title, desc,
+    tokens, cadence, cat, verify, proof type, streak target (conditional),
+    location (plain lat/lng/radius number inputs — **no map picker**,
+    documented in-UI as a known gap versus the Expo dev panel's
+    `LocationPickerMap`, use that instead for now if a task needs one),
     proof_accept, proof_reject, the five-item guide checklist,
-    verifiability_notes) that calls `POST` on the existing
-    `handleAdminCreateChallenge` endpoint — this is the primary way new
-    tasks get authored going forward, replacing hand-editing `data.ts`.
-  - Edit: the same form pre-filled, calling the existing
-    `handleAdminUpdateChallenge` endpoint (`PUT`/`PATCH` on the row's id).
-  - A live preview of the exact prompt `/verify` would send to Claude for
-    this task (render the merged template client-side or via a new
-    read-only admin endpoint that returns it) — this directly answers "what
-    the Claude Haiku call prompt really is" per task, visibly, before
-    publishing.
-  - **Delete**: a per-task "Delete" action in the list/edit view, calling
-    the existing `handleAdminDeleteChallenge` endpoint. This is a
-    **soft delete only** (sets `active = 0`), same as the API does today —
-    do **not** add a hard-delete path. `dev-challenges.ts`'s own header
-    comment states why: an id already handed to a client, or referenced by
-    a past completion/post, must stay resolvable forever
-    (`resolveBaseCatalogEntry` would otherwise 404 on old history). The
-    dashboard should present this plainly as "Delete" to the developer
-    (that's the mental model — the task disappears from suggestions
-    immediately) while the underlying mechanism stays a deactivation. A
-    "Reactivate" action undoes it, same as it does today via
-    `{"active": true}`.
-- [ ] Extend the admin API surface minimally if needed (e.g. a
-      `GET /admin/challenges/:id/preview-prompt` endpoint) rather than
-      duplicating prompt-building logic in the dashboard — the dashboard
-      should call the same `buildPrompt`-adjacent logic the Worker actually
-      uses, not a reimplementation that can drift out of sync.
+    verifiability_notes. Create posts to `handleAdminCreateChallenge`
+    (`POST /admin/challenges`); edit calls `handleAdminUpdateChallenge`
+    (`PATCH /admin/challenges/:id`) for the full body, then a separate bare
+    `{"active": ...}` PATCH if the Active checkbox changed — same two-call
+    pattern `src/app/dev-challenge-form.tsx` already uses, kept consistent
+    rather than reinvented.
+  - Prompt preview: a "Load exact /verify prompt" button (existing tasks
+    only, since it needs a stored row) calls the new
+    `GET /admin/challenges/:id/preview-prompt` endpoint and renders the
+    literal string.
+  - Delete: presented as a plain "Delete" button calling
+    `handleAdminDeleteChallenge` (`DELETE /admin/challenges/:id`) — soft
+    delete only, exactly per spec, no hard-delete path added anywhere. A
+    "Reactivate" button appears on inactive rows, calling the bare
+    `{"active": true}` PATCH.
+  - Non-blocking `warnings` (Phase 4's red-flag-verb check) are surfaced in
+    an inline banner after save, not silently dropped.
+- [x] Extended the admin API surface exactly as suggested rather than
+      duplicating prompt logic: `server/src/verify.ts`'s `buildPrompt` is
+      now exported and reused as-is by a new `handleAdminPreviewPrompt` in
+      `server/src/dev-challenges.ts`, wired at
+      `GET /admin/challenges/:id/preview-prompt` in `server/src/index.ts`.
+      Works on inactive/draft rows too (developer wants to check the prompt
+      *before* publishing).
+- [x] **Found and fixed a real cross-cutting bug while building this**:
+      `server/src/http.ts`'s `CORS_HEADERS` only listed `GET, POST, OPTIONS`
+      in `Access-Control-Allow-Methods`. The Expo app never hit this because
+      CORS is a browser-only mechanism (native `fetch` ignores it), but the
+      dashboard runs in a real browser and calls `PATCH`/`DELETE` — those
+      would have silently failed every edit/delete/toggle/reactivate/delete
+      call via a failed preflight. Added `PATCH, DELETE` to the allowed
+      methods list.
+- [x] **Verified end-to-end in a real browser**, not just curl: ran
+      `wrangler dev` locally against local D1 (temporarily set
+      `DEV_USER_ID` in `server/.dev.vars` to a throwaway signup, reverted
+      after), ran the dashboard's own Vite dev server against it, and drove
+      it with Playwright (`playwright-core`, already present in the repo's
+      root `node_modules` from the `run-gumpa-mobile` skill): logged in, saw
+      the 40 migrated tasks, opened the new-task form, tried to publish with
+      an unchecked guide checklist (got the expected 400 + inline error
+      banner), checked all five boxes, created the task, opened it back up,
+      loaded its real `/verify` prompt, and deleted it. No unexpected
+      console/page errors — the only console error captured was the
+      intentional 400 from the checklist-gate test itself. Screenshots
+      confirmed the list and form render cleanly. All throwaway local D1
+      rows and the temporary `DEV_USER_ID` were cleaned up afterward; the
+      real `.dev.vars` is back to its pre-session state.
+- **Not done / deferred**:
+  - No location picker map (plain number inputs instead) — noted above.
+  - Not deployed to Cloudflare Pages yet — needs your explicit go-ahead
+    (production-affecting, gated per `AGENTS.md`).
+  - The Expo-side `src/lib/admin-api.ts`'s `AdminChallenge` type wasn't
+    extended with the Phase 1 fields (`proofAccept`/`proofReject`/
+    `verifiabilityNotes`/`guideChecklist`) — the mobile dev panel still
+    only edits the pre-Phase-1 fields. Not required for Phase 5, but worth
+    doing if the mobile dev panel is meant to stay a real fallback surface
+    per decision 3, rather than just bit-rotting.
 
 ## Phase 6 — Verification pass (do this before calling any phase "done")
 

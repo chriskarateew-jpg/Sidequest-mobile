@@ -114,7 +114,11 @@ export async function handleVerify(request: Request, env: Env): Promise<Response
 // function grew these two parameters.
 const PROOF_HINT_DEFENSIVE_CAP = 200;
 
-function buildPrompt(title: string, desc?: string, proofAccept?: string, proofReject?: string): string {
+// Exported so the admin dashboard's prompt-preview endpoint
+// (dev-challenges.ts's handleAdminPreviewPrompt) calls this exact function
+// instead of a reimplementation that could drift out of sync — see
+// docs/task-database-roadmap.md Phase 5.
+export function buildPrompt(title: string, desc?: string, proofAccept?: string, proofReject?: string): string {
   return [
     'You are checking photo proof submitted for a personal-growth app challenge.',
     `Challenge: "${title}"${desc ? `\nDetails: ${desc}` : ''}`,

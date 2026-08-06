@@ -25,6 +25,7 @@ import {
   handleAdminCreateChallenge,
   handleAdminDeleteChallenge,
   handleAdminListChallenges,
+  handleAdminPreviewPrompt,
   handleAdminUpdateChallenge,
   handleListCustomChallenges,
 } from './dev-challenges';
@@ -114,6 +115,8 @@ export default {
     if (updateChallengeMatch) return handleAdminUpdateChallenge(request, env, updateChallengeMatch[1]);
     const deleteChallengeMatch = method === 'DELETE' ? pathname.match(/^\/admin\/challenges\/([^/]+)$/) : null;
     if (deleteChallengeMatch) return handleAdminDeleteChallenge(request, env, deleteChallengeMatch[1]);
+    const previewPromptMatch = method === 'GET' ? pathname.match(/^\/admin\/challenges\/([^/]+)\/preview-prompt$/) : null;
+    if (previewPromptMatch) return handleAdminPreviewPrompt(request, env, previewPromptMatch[1]);
 
     if (method === 'GET' && pathname === '/admin/boosts') return handleAdminListBoosts(request, env);
     if (method === 'POST' && pathname === '/admin/boosts') return handleAdminCreateBoost(request, env);
