@@ -359,15 +359,33 @@ yet (migrations, `verify.ts`, `dev-challenges.ts`, `catalog.ts`,
   against the pre-existing `data.ts` check it mirrors, not by an actual
   HTTP round trip. Covered by Phase 6's end-to-end pass once Phase 5 exists.
 
-## Phase 5 — Standalone web dashboard ✅ built and smoke-tested locally (2026-08-06)
+## Phase 5 — Standalone web dashboard ✅ built, tested, and deployed (2026-08-06)
 
+- [x] **Deployed to Cloudflare Pages**: https://gumpa-dashboard.pages.dev —
+      a real, bookmarkable URL, not local-only. `dashboard/.env`'s
+      `VITE_API_URL` was pointed at the production Worker
+      (`https://sidequest-verify.chriskarateew.workers.dev`) before the
+      build (Vite bakes env vars in at build time, so this has to happen
+      before `npm run build`, not just before deploy). Project created via
+      `wrangler pages project create gumpa-dashboard`, deployed via
+      `wrangler pages deploy dist --project-name=gumpa-dashboard --branch=main`
+      (the `--branch=main` matters — the project's production branch was
+      set to `main` at creation, but this repo's actual branch is `master`;
+      omitting `--branch` the first time landed the deploy as a non-
+      production preview, reachable only at the `master.gumpa-dashboard
+      .pages.dev` alias, not the bookmarkable root domain — redeployed with
+      the explicit flag to fix). New Cloudflare Pages projects can take a
+      few minutes for their `*.pages.dev` subdomain's SSL cert to
+      provision — confirmed this wasn't a broader connectivity problem by
+      checking a known-good `*.pages.dev` site first, then simply waited
+      it out rather than assuming something was broken.
 - [x] New lightweight web app: Vite + React + TypeScript, hand-scaffolded
       (not `npm create vite` interactively) at `dashboard/` — a sibling of
       `server/`, not part of the Expo app bundle at all. `dashboard/package.json`
       has a `deploy` script (`wrangler pages deploy dist --project-name=
-      gumpa-dashboard`) for later, **not run yet** — Cloudflare Pages deploy
-      is a production-affecting action, same gating as `wrangler deploy`/
-      `wrangler d1 execute --remote`. Say the word when ready.
+      gumpa-dashboard --branch=main`) for future redeploys after code
+      changes — remember to rebuild first if `VITE_API_URL` or any source
+      file changed.
 - [x] Auth: `dashboard/src/pages/Login.tsx` calls the existing
       `POST /auth/login` (`dashboard/src/api.ts`'s `login`), stores the JWT
       in `localStorage`, sends it as `Bearer` on every `/admin/*` call. No
@@ -432,14 +450,12 @@ yet (migrations, `verify.ts`, `dev-challenges.ts`, `catalog.ts`,
       real `.dev.vars` is back to its pre-session state.
 - **Not done / deferred**:
   - No location picker map (plain number inputs instead) — noted above.
-  - Not deployed to Cloudflare Pages yet — needs your explicit go-ahead
-    (production-affecting, gated per `AGENTS.md`).
-  - The Expo-side `src/lib/admin-api.ts`'s `AdminChallenge` type wasn't
-    extended with the Phase 1 fields (`proofAccept`/`proofReject`/
-    `verifiabilityNotes`/`guideChecklist`) — the mobile dev panel still
-    only edits the pre-Phase-1 fields. Not required for Phase 5, but worth
-    doing if the mobile dev panel is meant to stay a real fallback surface
-    per decision 3, rather than just bit-rotting.
+  - ~~Not deployed to Cloudflare Pages yet~~ — done, see Phase 6: live at
+    https://gumpa-dashboard.pages.dev.
+  - ~~The Expo-side `src/lib/admin-api.ts`'s `AdminChallenge` type wasn't
+    extended with the Phase 1 fields~~ — done as part of Phase 6's mobile
+    dev panel fix (see below), which turned out not to be optional after
+    all.
 
 ## Phase 6 — Verification pass (do this before calling any phase "done") ✅ done (2026-08-06)
 
@@ -517,6 +533,10 @@ yet (migrations, `verify.ts`, `dev-challenges.ts`, `catalog.ts`,
       and confirmed it serves that post with its original frozen title, not
       the current one — the id-stability guarantee holds under real drift,
       confirmed against the actual API, not assumed from the schema alone.
+- [x] **Deployed the Phase 5 dashboard to Cloudflare Pages**, closing the
+      loop on the user's original ask (edit tasks from a laptop, not the
+      phone): https://gumpa-dashboard.pages.dev. See Phase 5's updated
+      checklist for the deploy details.
 
 **Note for future sessions**: during this pass, a production password was
 briefly typed into a terminal and became visible in this conversation while
