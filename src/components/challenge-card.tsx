@@ -37,11 +37,20 @@ export function CadenceBadge({ cadence }: { cadence: Cadence }) {
   );
 }
 
-export function RewardPill({ tokens }: { tokens: number }) {
+// boostedTokens, when set, means a developer boost is currently active for
+// this challenge (see server/src/boosts.ts) — the original amount shows
+// crossed out next to the new one, rather than just swapping the number, so
+// the boost itself is visible, not just its result. The pill has no fixed
+// width (sized by padding around its row of children), so adding the extra
+// crossed-out text simply widens the oval instead of shrinking either
+// number to fit.
+export function RewardPill({ tokens, boostedTokens }: { tokens: number; boostedTokens?: number }) {
+  const boosted = boostedTokens != null && boostedTokens !== tokens;
   return (
     <View style={badgeStyles.rewardPill}>
       <CoinIcon size={15} color={Colors.goldText} />
-      <Text style={badgeStyles.rewardText}>+{tokens}</Text>
+      {boosted && <Text style={badgeStyles.rewardTextStruck}>+{tokens}</Text>}
+      <Text style={badgeStyles.rewardText}>+{boosted ? boostedTokens : tokens}</Text>
     </View>
   );
 }
@@ -66,6 +75,16 @@ const badgeStyles = StyleSheet.create({
     paddingVertical: 8,
   },
   rewardText: { fontWeight: '800', color: Colors.goldText, fontSize: 16 },
+  // Same font size as rewardText — the crossed-out original never shrinks,
+  // it just sits alongside the new amount as its own piece of text, muted
+  // so the eye still lands on the current (boosted) number first.
+  rewardTextStruck: {
+    fontWeight: '800',
+    fontSize: 16,
+    color: Colors.goldText,
+    opacity: 0.45,
+    textDecorationLine: 'line-through',
+  },
 });
 
 export function ChallengeCard({ challenge }: { challenge: Challenge }) {
@@ -76,6 +95,7 @@ export function ChallengeCard({ challenge }: { challenge: Challenge }) {
   // reference itself is stable across state updates.
   const completion = useGumpaStore((s) => s.completions[completionKey]);
   const logStreakPhoto = useGumpaStore((s) => s.logStreakPhoto);
+  const boost = useGumpaStore((s) => s.activeBoosts[challenge.id]);
   const authToken = useAuthStore((s) => s.token);
   const show = useToastStore((s) => s.show);
   const [stage, setStage] = useState<Stage>('idle');
@@ -213,7 +233,7 @@ export function ChallengeCard({ challenge }: { challenge: Challenge }) {
 
         {done ? (
           <View style={styles.bottom}>
-            <RewardPill tokens={challenge.tokens} />
+            <RewardPill tokens={challenge.tokens} boostedTokens={boost?.tokens} />
             <Text style={styles.doneLabel}>{challenge.verify === 'streak' ? '✓ Streak complete' : '✓ Proof submitted'}</Text>
           </View>
         ) : challenge.proofType === 'either' ? (
@@ -222,7 +242,7 @@ export function ChallengeCard({ challenge }: { challenge: Challenge }) {
           // both buttons split the full width evenly below, instead of
           // squeezing three elements into one crowded row.
           <View style={styles.bottomStacked}>
-            <RewardPill tokens={challenge.tokens} />
+            <RewardPill tokens={challenge.tokens} boostedTokens={boost?.tokens} />
             <View style={styles.actionRowFull}>
               <Pressable
                 style={[styles.btn, styles.btnPrimary, styles.btnFlex, busy && styles.btnDisabled]}
@@ -258,7 +278,7 @@ export function ChallengeCard({ challenge }: { challenge: Challenge }) {
           </View>
         ) : (
           <View style={styles.bottom}>
-            <RewardPill tokens={challenge.tokens} />
+            <RewardPill tokens={challenge.tokens} boostedTokens={boost?.tokens} />
             <View style={styles.actionRow}>
               {challenge.proofType === 'camera' && (
                 <Pressable

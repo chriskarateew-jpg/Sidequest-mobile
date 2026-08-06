@@ -22,9 +22,21 @@ export interface CatalogEntry {
   target?: number; // instances required within the period; only set when verify === 'streak'
   title: string;
   desc: string;
-  placeLat?: number; // only set for server-generated local/venue challenges
+  placeLat?: number; // set for server-generated local/venue challenges, or a developer-pinned location (see location-fields.ts)
   placeLng?: number;
   placeName?: string;
+  // Per-entry GPS-proximity radius in meters, checked in complete.ts's
+  // checkPhotoFraud. Only ever set alongside placeLat/placeLng. Falls back
+  // to LOCAL_DISTANCE_THRESHOLD_METERS there when unset (the fixed radius
+  // local_challenges has always used) — a developer-authored entry can
+  // override it with its own configured radius instead.
+  radiusMeters?: number;
+  // Set only for a time-boxed developer Challenge (see timed-challenges.ts) —
+  // distinct from a recurring cadence-based Task. complete.ts/verify.ts
+  // branch on this to enforce the global deadline and use a fixed 'once'
+  // period key instead of the usual daily/weekly/monthly one.
+  kind?: 'timed';
+  deadlineAt?: number; // only set when kind === 'timed'
 }
 
 export const CHALLENGE_CATALOG: Record<string, CatalogEntry> = {

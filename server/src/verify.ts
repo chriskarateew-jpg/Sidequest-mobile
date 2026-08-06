@@ -15,6 +15,7 @@ import { hashToken, signToken } from './crypto';
 import type { Env } from './env';
 import { error, json, safeJson } from './http';
 import { checkRateLimit } from './ratelimit';
+import { checkTimedChallengeWindow } from './timed-challenges';
 
 const MODEL = 'claude-haiku-4-5-20251001';
 const PROOF_TTL_SECONDS = 5 * 60;
@@ -37,6 +38,15 @@ export async function handleVerify(request: Request, env: Env): Promise<Response
 
   const catalogEntry = await resolveCatalogEntry(env, challengeId);
   if (!catalogEntry) return error('Unknown challenge');
+
+  if (catalogEntry.kind === 'timed') {
+    // Blocks minting a fresh proof token for something already past its
+    // deadline — otherwise a client could verify right at the wire and
+    // race the actual /complete call in after the window closes.
+    const window = await checkTimedChallengeWindow(env, challengeId);
+    if (!window.ok) return error(window.reason, 409);
+  }
+
   const { title, desc } = catalogEntry;
 
   let anthropicRes: Response;

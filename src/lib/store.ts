@@ -7,12 +7,25 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 
 import { useAuthStore } from '@/lib/auth';
+import { fetchActiveBoosts, type ActiveBoost } from '@/lib/boosts';
 import { CHALLENGES, type Challenge, type Cadence } from '@/lib/data';
+import { fetchCustomChallenges } from '@/lib/dev-challenges';
 import { getCurrentRoundedLocation } from '@/lib/location';
 import { fetchLocalChallenges } from '@/lib/local-challenges';
+import { fetchTimedChallenges, type TimedChallenge } from '@/lib/timed-challenges';
 
 const STORAGE_KEY = 'gumpa_state_v1';
 const LOCAL_CHALLENGES_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+// Much shorter than local challenges' TTL — these have no location
+// dependency to justify caching hard, and a developer editing a challenge or
+// starting a boost should show up for everyone else quickly, not after a
+// week.
+const CUSTOM_CHALLENGES_TTL_MS = 3 * 60 * 1000;
+const ACTIVE_BOOSTS_TTL_MS = 3 * 60 * 1000;
+// Shorter still — a time-boxed Challenge is urgent by nature (its whole
+// point is a short global deadline), so its "is this still live" list
+// should feel closer to real-time than the other supplementary fetches.
+const TIMED_CHALLENGES_TTL_MS = 60 * 1000;
 
 export interface Completion {
   at: number;
@@ -39,6 +52,21 @@ interface PersistedState {
   localChallenges: Challenge[];
   localChallengesFetchedAt: number | null;
   locationOptOut: boolean;
+  // Developer-authored custom challenges (see server/src/dev-challenges.ts)
+  // and currently-active token-payout boosts (server/src/boosts.ts) —
+  // fetched for every logged-in user (not just the developer), same trust
+  // level as localChallenges, so any user's suggestion pool and reward
+  // pills reflect what the developer has published/boosted.
+  customChallenges: Challenge[];
+  customChallengesFetchedAt: number | null;
+  activeBoosts: Record<string, ActiveBoost>;
+  activeBoostsFetchedAt: number | null;
+  // Time-boxed developer Challenges (see server/src/timed-challenges.ts) —
+  // a global, absolute deadline shared by every user, not part of the
+  // daily/weekly/monthly suggestion rotation, so kept separate from
+  // customChallenges rather than folded into the same pool.
+  timedChallenges: TimedChallenge[];
+  timedChallengesFetchedAt: number | null;
   // The daily/weekly/monthly period key (see periodKeyFor below) as of the
   // last time the user opened the Tasks tab — compared against the current
   // period key to drive the "New!" badge on the tab (see hasNewTasks). Null
@@ -55,6 +83,12 @@ const DEFAULT_STATE: PersistedState = {
   localChallenges: [],
   localChallengesFetchedAt: null,
   locationOptOut: false,
+  customChallenges: [],
+  customChallengesFetchedAt: null,
+  activeBoosts: {},
+  activeBoostsFetchedAt: null,
+  timedChallenges: [],
+  timedChallengesFetchedAt: null,
   lastSeenQuestPeriods: { daily: null, weekly: null, monthly: null },
 };
 
@@ -128,8 +162,8 @@ function seededShuffle<T>(arr: T[], seedStr: string): T[] {
 // on top of it — `count` is a hard cap on how many cards a section shows,
 // so with count=1 (monthly) this swaps in the local pick instead of
 // producing a second card.
-function pickSuggestions(cadence: Cadence, count: number, extra: Challenge[]): Challenge[] {
-  const pool = [...CHALLENGES, ...extra].filter((c) => c.cadence === cadence);
+function pickSuggestions(cadence: Cadence, count: number, extra: Challenge[], custom: Challenge[]): Challenge[] {
+  const pool = [...CHALLENGES, ...extra, ...custom].filter((c) => c.cadence === cadence);
   const shuffled = seededShuffle(pool, cadence + ':' + periodKeyFor(cadence));
   const picked: Challenge[] = [];
   const usedCats = new Set<string>();
@@ -239,6 +273,15 @@ interface GumpaStore extends PersistedState {
   // Purely client-side — the server stores no per-user location data at
   // all, so there's nothing server-side to clear.
   clearLocalArea: () => void;
+
+  // No-ops if already fetched within their (short) TTL unless forced —
+  // same optimistic-cache shape as refreshLocalChallenges, just without a
+  // location dependency. Silently does nothing on failure/no-session, same
+  // as _layout.tsx's existing best-effort token sync — these are
+  // supplementary data, never required for the app to work.
+  refreshCustomChallenges: (force?: boolean) => Promise<void>;
+  refreshActiveBoosts: (force?: boolean) => Promise<void>;
+  refreshTimedChallenges: (force?: boolean) => Promise<void>;
 }
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -256,6 +299,12 @@ function schedulePersist(get: () => GumpaStore) {
       localChallenges: s.localChallenges,
       localChallengesFetchedAt: s.localChallengesFetchedAt,
       locationOptOut: s.locationOptOut,
+      customChallenges: s.customChallenges,
+      customChallengesFetchedAt: s.customChallengesFetchedAt,
+      activeBoosts: s.activeBoosts,
+      activeBoostsFetchedAt: s.activeBoostsFetchedAt,
+      timedChallenges: s.timedChallenges,
+      timedChallengesFetchedAt: s.timedChallengesFetchedAt,
       lastSeenQuestPeriods: s.lastSeenQuestPeriods,
     };
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(toSave)).catch(() => {
@@ -299,10 +348,11 @@ export const useGumpaStore = create<GumpaStore>((set, get) => ({
 
   getSuggestions: () => {
     const local = get().localChallenges;
+    const custom = get().customChallenges;
     return {
-      daily: pickSuggestions('daily', 2, local),
-      weekly: pickSuggestions('weekly', 3, local),
-      monthly: pickSuggestions('monthly', 1, local),
+      daily: pickSuggestions('daily', 2, local, custom),
+      weekly: pickSuggestions('weekly', 3, local, custom),
+      monthly: pickSuggestions('monthly', 1, local, custom),
     };
   },
 
@@ -426,11 +476,60 @@ export const useGumpaStore = create<GumpaStore>((set, get) => ({
     set({ localChallenges: [], localChallengesFetchedAt: null, locationOptOut: true });
     schedulePersist(get);
   },
+
+  refreshCustomChallenges: async (force = false) => {
+    const s = get();
+    if (!force && s.customChallengesFetchedAt !== null && Date.now() - s.customChallengesFetchedAt < CUSTOM_CHALLENGES_TTL_MS) return;
+
+    const token = useAuthStore.getState().token;
+    if (!token) return;
+
+    try {
+      const customChallenges = await fetchCustomChallenges(token);
+      set({ customChallenges, customChallengesFetchedAt: Date.now() });
+      schedulePersist(get);
+    } catch {
+      // best-effort — supplementary data, static catalog still works fully on its own
+    }
+  },
+
+  refreshActiveBoosts: async (force = false) => {
+    const s = get();
+    if (!force && s.activeBoostsFetchedAt !== null && Date.now() - s.activeBoostsFetchedAt < ACTIVE_BOOSTS_TTL_MS) return;
+
+    const token = useAuthStore.getState().token;
+    if (!token) return;
+
+    try {
+      const activeBoosts = await fetchActiveBoosts(token);
+      set({ activeBoosts, activeBoostsFetchedAt: Date.now() });
+      schedulePersist(get);
+    } catch {
+      // best-effort — a stale/empty boost map just means pills show base tokens
+    }
+  },
+
+  refreshTimedChallenges: async (force = false) => {
+    const s = get();
+    if (!force && s.timedChallengesFetchedAt !== null && Date.now() - s.timedChallengesFetchedAt < TIMED_CHALLENGES_TTL_MS) return;
+
+    const token = useAuthStore.getState().token;
+    if (!token) return;
+
+    try {
+      const timedChallenges = await fetchTimedChallenges(token);
+      set({ timedChallenges, timedChallengesFetchedAt: Date.now() });
+      schedulePersist(get);
+    } catch {
+      // best-effort — the server's own deadline check is the real gate, this just misses a refresh
+    }
+  },
 }));
 
-// Checks the static catalog first, then any fetched local challenges —
-// used everywhere a challenge needs resolving by id (the completion actions
-// above).
+// Checks the static catalog first, then any fetched local or custom
+// challenges — used everywhere a challenge needs resolving by id (the
+// completion actions above).
 export function findChallengeById(id: string): Challenge | undefined {
-  return CHALLENGES.find((c) => c.id === id) ?? useGumpaStore.getState().localChallenges.find((c) => c.id === id);
+  const s = useGumpaStore.getState();
+  return CHALLENGES.find((c) => c.id === id) ?? s.localChallenges.find((c) => c.id === id) ?? s.customChallenges.find((c) => c.id === id);
 }

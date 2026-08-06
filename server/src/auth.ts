@@ -135,6 +135,19 @@ export async function requireAuth(request: Request, env: Env): Promise<{ id: str
   return { id: payload.sub, username: payload.username };
 }
 
+// Gates the /admin/* developer-only routes (custom challenge authoring,
+// payout boosts). There's no role/permission system in this app — this is
+// the only account allowed through, identified by a Worker secret
+// (env.DEV_USER_ID) that's never in git or the client bundle, so it can't be
+// spoofed by editing client code. Callers should return a plain 404 (not
+// 401/403) on a null result, so a non-developer request looks identical to
+// hitting a route that doesn't exist.
+export async function requireDeveloper(request: Request, env: Env): Promise<{ id: string; username: string } | null> {
+  const auth = await requireAuth(request, env);
+  if (!auth || !env.DEV_USER_ID || auth.id !== env.DEV_USER_ID) return null;
+  return auth;
+}
+
 export async function handleVerifyEmail(request: Request, env: Env): Promise<Response> {
   const token = new URL(request.url).searchParams.get('token') ?? '';
   if (!RESET_TOKEN_RE.test(token)) {

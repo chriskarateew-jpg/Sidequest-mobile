@@ -179,6 +179,16 @@ async function cmd_clickTestId(id) {
   console.log('clicked testid:', id);
 }
 
+// RN Pressable's onLongPress (default delayLongPress ~500ms) fires off a
+// timer started on pointerdown/mousedown, not a distinct Playwright gesture
+// — so a plain click with a held-down delay between mousedown and mouseup
+// exercises the same code path a real long-press would.
+async function cmd_longPressTestId(id, ms) {
+  await page.getByTestId(id).click({ delay: Number(ms) || 700 });
+  await page.waitForTimeout(800);
+  console.log('long-pressed testid:', id);
+}
+
 async function cmd_fillTestId(id, ...words) {
   const text = words.join(' ');
   await page.getByTestId(id).fill(text);
@@ -242,6 +252,7 @@ const HANDLERS = {
   screenshot: cmd_screenshot,
   click: cmd_click,
   'click-testid': cmd_clickTestId,
+  'long-press-testid': cmd_longPressTestId,
   'fill-testid': cmd_fillTestId,
   upload: cmd_upload,
   'upload-testid': cmd_uploadTestId,

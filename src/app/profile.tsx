@@ -56,7 +56,12 @@ export default function ProfileScreen() {
         </Pressable>
       </View>
       <View style={styles.avatarSection}>
-        <Pressable testID="avatar-change-button" style={styles.avatarWrap} onPress={handleChangeAvatar} disabled={uploadingAvatar}>
+        <Pressable
+          testID="avatar-change-button"
+          style={styles.avatarWrap}
+          onPress={handleChangeAvatar}
+          onLongPress={() => router.push('/dev')}
+          disabled={uploadingAvatar}>
           {user.avatarKey ? (
             <Image source={{ uri: photoUrl(user.avatarKey) }} style={styles.avatarImg} contentFit="cover" />
           ) : (

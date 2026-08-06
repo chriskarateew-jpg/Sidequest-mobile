@@ -28,6 +28,7 @@ export default function SubmitReviewScreen() {
   const show = useToastStore((s) => s.show);
   const completePhoto = useGumpaStore((s) => s.completePhoto);
   const logStreakPhoto = useGumpaStore((s) => s.logStreakPhoto);
+  const boost = useGumpaStore((s) => (pending ? s.activeBoosts[pending.challenge.id] : undefined));
 
   const [caption, setCaption] = useState('');
   const [rating, setRating] = useState(0);
@@ -102,7 +103,7 @@ export default function SubmitReviewScreen() {
             <CadenceBadge cadence={challenge.cadence} />
           </View>
           <Text style={styles.desc}>{challenge.desc}</Text>
-          <RewardPill tokens={challenge.tokens} />
+          <RewardPill tokens={challenge.tokens} boostedTokens={boost?.tokens} />
         </View>
 
         <View style={styles.card}>

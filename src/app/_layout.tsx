@@ -18,6 +18,9 @@ export default function RootLayout() {
   const refreshLocalChallenges = useGumpaStore((s) => s.refreshLocalChallenges);
   const localChallengesFetchedAt = useGumpaStore((s) => s.localChallengesFetchedAt);
   const locationOptOut = useGumpaStore((s) => s.locationOptOut);
+  const refreshCustomChallenges = useGumpaStore((s) => s.refreshCustomChallenges);
+  const refreshActiveBoosts = useGumpaStore((s) => s.refreshActiveBoosts);
+  const refreshTimedChallenges = useGumpaStore((s) => s.refreshTimedChallenges);
   const hydrateAuth = useAuthStore((s) => s.hydrate);
   const authHydrated = useAuthStore((s) => s.hydrated);
   const token = useAuthStore((s) => s.token);
@@ -53,6 +56,16 @@ export default function RootLayout() {
     const s = useGumpaStore.getState();
     if (s.localChallengesFetchedAt !== null && !s.locationOptOut) refreshLocalChallenges();
   }, [token, hydrated, refreshLocalChallenges]);
+
+  // Custom challenges and boosts have no location gate and no opt-out —
+  // every logged-in user fetches them (short TTL, see store.ts), same as
+  // the token balance sync above.
+  useEffect(() => {
+    if (!token || !hydrated) return;
+    refreshCustomChallenges();
+    refreshActiveBoosts();
+    refreshTimedChallenges();
+  }, [token, hydrated, refreshCustomChallenges, refreshActiveBoosts, refreshTimedChallenges]);
 
   if (!authHydrated) return null;
 
@@ -91,6 +104,10 @@ export default function RootLayout() {
           <Stack.Screen name="profile" />
           <Stack.Screen name="settings" />
           <Stack.Screen name="faq" />
+          <Stack.Screen name="dev" />
+          <Stack.Screen name="dev-challenge-form" />
+          <Stack.Screen name="dev-boost-form" />
+          <Stack.Screen name="dev-timed-challenge-form" />
           <Stack.Screen
             name="submit-review"
             options={{ presentation: 'modal', animation: 'slide_from_bottom', gestureDirection: 'vertical' }}

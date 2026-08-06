@@ -16,7 +16,15 @@ import { base64ToBytes, error, json, safeJson } from './http';
 import { computePeriodKey, todayKey } from './period';
 import { computeDHash, findDuplicateHash, recordPhotoHash } from './photo-hash';
 import { checkRateLimit } from './ratelimit';
+import { checkTimedChallengeWindow } from './timed-challenges';
 import { creditTokens, getTokenBalance, type CatalogEntry } from './tokens';
+
+// A time-boxed Challenge only ever needs one completion ever per user —
+// its deadline is global, not tied to any daily/weekly/monthly period — so
+// it gets a single fixed period key instead of one computed from cadence.
+// The completions table's existing UNIQUE(user_id, challenge_id, period_key)
+// then gives "already completed" idempotency for free with no new table.
+const TIMED_CHALLENGE_PERIOD_KEY = 'once';
 
 const MAX_CAPTION_LENGTH = 240;
 
@@ -79,15 +87,20 @@ async function requirePhotoProof(
   return { photoBase64, mediaType };
 }
 
-// Half a mile. Compared against a precise GPS fix (src/lib/photo.ts's
-// getCurrentPreciseLocation), not the app's coarse ~1km-grid location —
-// real device GPS accuracy is typically ~10-50m, worse indoors/urban canyon
-// (up to ~100-150m), so this is a deliberately generous "same general
-// vicinity" check on top of that, not a tight pin-to-pin match. This is one
-// layer among three (camera-only capture, this GPS check, app-wide photo
-// dedup below), not the only fraud defense. Note: recordPhotoHash rounds
-// lat/lng back down before persisting — this threshold only governs the
-// in-request comparison, not what ends up in storage.
+// Half a mile — the default when a location-bound entry doesn't specify its
+// own radius (every local_challenges row, since those aren't
+// developer-configurable). Compared against a precise GPS fix
+// (src/lib/photo.ts's getCurrentPreciseLocation), not the app's coarse
+// ~1km-grid location — real device GPS accuracy is typically ~10-50m, worse
+// indoors/urban canyon (up to ~100-150m), so this is a deliberately generous
+// "same general vicinity" check on top of that, not a tight pin-to-pin
+// match. This is one layer among three (camera-only capture, this GPS
+// check, app-wide photo dedup below), not the only fraud defense. Note:
+// recordPhotoHash rounds lat/lng back down before persisting — this
+// threshold only governs the in-request comparison, not what ends up in
+// storage. A developer-authored Task/Challenge can set its own tighter or
+// looser radius instead (see location-fields.ts) — catalogEntry.radiusMeters
+// overrides this default when present.
 const LOCAL_DISTANCE_THRESHOLD_METERS = 805; // 0.5 mi ≈ 804.67 m
 
 function completionResponseShape(row: CompletionRow) {
@@ -132,11 +145,13 @@ async function checkPhotoFraud(
     return rejectSubmission(env, userId, row, 'duplicate_photo', 'Exact photo already submitted.');
   }
 
-  // Only local/venue challenges carry a target location to check against —
-  // the static catalog's generic challenges ("do 20 push-ups") have none.
+  // Only local/venue challenges and developer-pinned Tasks/Challenges carry
+  // a target location to check against — generic challenges ("do 20
+  // push-ups") have none.
   if (catalogEntry.placeLat != null && catalogEntry.placeLng != null && lat != null && lng != null) {
     const distanceMeters = haversineMeters(lat, lng, catalogEntry.placeLat, catalogEntry.placeLng);
-    if (distanceMeters > LOCAL_DISTANCE_THRESHOLD_METERS) {
+    const threshold = catalogEntry.radiusMeters ?? LOCAL_DISTANCE_THRESHOLD_METERS;
+    if (distanceMeters > threshold) {
       const placeName = catalogEntry.placeName ?? 'this place';
       return rejectSubmission(env, userId, row, 'location_mismatch', `Photo location doesn't match ${placeName}.`);
     }
@@ -160,7 +175,12 @@ export async function handleComplete(request: Request, env: Env): Promise<Respon
   const catalogEntry = challengeId ? await resolveCatalogEntry(env, challengeId) : null;
   if (!challengeId || !catalogEntry) return error('Unknown challenge');
 
-  const periodKey = computePeriodKey(catalogEntry.cadence);
+  if (catalogEntry.kind === 'timed') {
+    const window = await checkTimedChallengeWindow(env, challengeId);
+    if (!window.ok) return error(window.reason, 409);
+  }
+
+  const periodKey = catalogEntry.kind === 'timed' ? TIMED_CHALLENGE_PERIOD_KEY : computePeriodKey(catalogEntry.cadence);
   const target = catalogEntry.target ?? 1;
 
   let row = await env.DB.prepare('SELECT * FROM completions WHERE user_id = ? AND challenge_id = ? AND period_key = ?')

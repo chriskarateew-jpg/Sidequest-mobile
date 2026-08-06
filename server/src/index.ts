@@ -13,8 +13,21 @@ import {
   handleSignup,
   handleVerifyEmail,
 } from './auth';
+import {
+  handleAdminCancelBoost,
+  handleAdminCreateBoost,
+  handleAdminListBoosts,
+  handleListActiveBoosts,
+} from './boosts';
 import { handleAddComment, handleListComments } from './comments';
 import { handleComplete } from './complete';
+import {
+  handleAdminCreateChallenge,
+  handleAdminDeleteChallenge,
+  handleAdminListChallenges,
+  handleAdminUpdateChallenge,
+  handleListCustomChallenges,
+} from './dev-challenges';
 import { handleCancelDuel, handleCreateDuel, handleListDuels, handleRespondDuel } from './duels';
 import type { Env } from './env';
 import { handleGetPhoto, handleListFeed, handleListMyPosts, handleToggleKudos } from './feed';
@@ -24,6 +37,13 @@ import { CORS_HEADERS, error } from './http';
 import { handleGetLocalChallenges } from './local-challenges';
 import { handleCreatePot, handleGetPot, handleJoinPot, handleListGroupPots } from './pots';
 import { handleRewardsInterest } from './rewards';
+import {
+  handleAdminCreateTimedChallenge,
+  handleAdminDeleteTimedChallenge,
+  handleAdminListTimedChallenges,
+  handleAdminUpdateTimedChallenge,
+  handleListTimedChallenges,
+} from './timed-challenges';
 import { handleGetBalance } from './tokens';
 import { handleVerify } from './verify';
 
@@ -81,6 +101,31 @@ export default {
     if (method === 'GET' && pathname === '/tokens/me') return handleGetBalance(request, env);
     if (method === 'POST' && pathname === '/rewards/interest') return handleRewardsInterest(request, env);
     if (method === 'GET' && pathname === '/local-challenges') return handleGetLocalChallenges(request, env);
+    if (method === 'GET' && pathname === '/challenges/custom') return handleListCustomChallenges(request, env);
+    if (method === 'GET' && pathname === '/boosts/active') return handleListActiveBoosts(request, env);
+    if (method === 'GET' && pathname === '/timed-challenges') return handleListTimedChallenges(request, env);
+
+    // Developer-only — see requireDeveloper in auth.ts. A non-developer
+    // request falls through to the catch-all 404 below the same as any
+    // other unmatched route, never a distinguishing 401/403.
+    if (method === 'GET' && pathname === '/admin/challenges') return handleAdminListChallenges(request, env);
+    if (method === 'POST' && pathname === '/admin/challenges') return handleAdminCreateChallenge(request, env);
+    const updateChallengeMatch = method === 'PATCH' ? pathname.match(/^\/admin\/challenges\/([^/]+)$/) : null;
+    if (updateChallengeMatch) return handleAdminUpdateChallenge(request, env, updateChallengeMatch[1]);
+    const deleteChallengeMatch = method === 'DELETE' ? pathname.match(/^\/admin\/challenges\/([^/]+)$/) : null;
+    if (deleteChallengeMatch) return handleAdminDeleteChallenge(request, env, deleteChallengeMatch[1]);
+
+    if (method === 'GET' && pathname === '/admin/boosts') return handleAdminListBoosts(request, env);
+    if (method === 'POST' && pathname === '/admin/boosts') return handleAdminCreateBoost(request, env);
+    const cancelBoostMatch = method === 'DELETE' ? pathname.match(/^\/admin\/boosts\/([^/]+)$/) : null;
+    if (cancelBoostMatch) return handleAdminCancelBoost(request, env, cancelBoostMatch[1]);
+
+    if (method === 'GET' && pathname === '/admin/timed-challenges') return handleAdminListTimedChallenges(request, env);
+    if (method === 'POST' && pathname === '/admin/timed-challenges') return handleAdminCreateTimedChallenge(request, env);
+    const updateTimedMatch = method === 'PATCH' ? pathname.match(/^\/admin\/timed-challenges\/([^/]+)$/) : null;
+    if (updateTimedMatch) return handleAdminUpdateTimedChallenge(request, env, updateTimedMatch[1]);
+    const deleteTimedMatch = method === 'DELETE' ? pathname.match(/^\/admin\/timed-challenges\/([^/]+)$/) : null;
+    if (deleteTimedMatch) return handleAdminDeleteTimedChallenge(request, env, deleteTimedMatch[1]);
 
     const createPotMatch = method === 'POST' ? pathname.match(/^\/groups\/([^/]+)\/pots$/) : null;
     if (createPotMatch) return handleCreatePot(request, env, createPotMatch[1]);
