@@ -1,10 +1,15 @@
 # Writing Gumpa challenges
 
-Guidelines for anyone (human or AI) adding entries to `src/lib/data.ts`'s
-`CHALLENGES` array. Read this before writing new tasks. This applies to the
-static catalog only — server-generated local challenges (tied to a real
-named nearby venue, see `server/src/local-challenges.ts`) already satisfy
-these by construction and don't need a separate pass.
+Guidelines for anyone (human or AI) adding a developer-authored task to the
+`dev_challenges` table (see `server/src/dev-challenges.ts` and
+`docs/task-database-roadmap.md`). Read this before writing new tasks. What
+used to be a separate hardcoded static catalog (`src/lib/data.ts`'s
+`CHALLENGES` array) was migrated into `dev_challenges` as of
+`server/migrations/0020_migrate_static_challenges.sql` — both catalog
+provenances go through the same guide now. Server-generated local
+challenges (tied to a real named nearby venue, see
+`server/src/local-challenges.ts`) already satisfy these by construction and
+don't need a separate pass.
 
 ## The five tests
 

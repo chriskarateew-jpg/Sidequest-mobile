@@ -1,7 +1,8 @@
 import { requireAuth } from './auth';
+import { resolveBaseCatalogEntry } from './catalog';
 import type { Env } from './env';
 import { error, json, safeJson } from './http';
-import { CHALLENGE_CATALOG, creditTokens, debitTokens, type Cadence } from './tokens';
+import { creditTokens, debitTokens, type Cadence } from './tokens';
 
 const CADENCE_WINDOW_MS: Record<Cadence, number> = {
   daily: 24 * 60 * 60 * 1000,
@@ -45,7 +46,11 @@ export async function handleCreateDuel(request: Request, env: Env): Promise<Resp
 
   if (!opponentId || opponentId === auth.id) return error('Invalid opponent');
   if (!wager || wager <= 0) return error('Wager must be a positive number of tokens');
-  const catalogEntry = CHALLENGE_CATALOG[challengeId];
+  // Resolves through the full catalog chain (static, local, dev, timed) —
+  // this used to only check the static CHALLENGE_CATALOG directly, which
+  // silently made duels uncreatable against any local/dev-authored/timed
+  // challenge (see docs/task-database-roadmap.md Phase 3).
+  const catalogEntry = await resolveBaseCatalogEntry(env, challengeId);
   if (!catalogEntry) return error('Unknown challenge');
   if (!(await areFriends(env, auth.id, opponentId))) return error('You can only duel friends', 403);
 

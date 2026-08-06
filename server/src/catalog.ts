@@ -53,6 +53,8 @@ export async function resolveBaseCatalogEntry(env: Env, challengeId: string): Pr
       target: devRow.streak_target ?? undefined,
       title: devRow.title,
       desc: devRow.desc,
+      ...(devRow.proof_accept ? { proofAccept: devRow.proof_accept } : {}),
+      ...(devRow.proof_reject ? { proofReject: devRow.proof_reject } : {}),
       ...(devRow.place_lat != null && devRow.place_lng != null
         ? { placeLat: devRow.place_lat, placeLng: devRow.place_lng, radiusMeters: devRow.radius_meters ?? undefined }
         : {}),

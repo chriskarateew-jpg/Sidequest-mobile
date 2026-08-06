@@ -18,6 +18,15 @@ const VALID_PROOF: ProofType[] = ['camera', 'screenshot', 'either'];
 const MAX_TOKENS = 2000;
 const MAX_TITLE_LENGTH = 100;
 const MAX_DESC_LENGTH = 240;
+// Short guidance phrases spliced into /verify's prompt template (see
+// verify.ts), not a standalone prompt — kept well short of the model's
+// context so a developer can't accidentally (or deliberately) turn this
+// into a second free-text override of the whole prompt.
+const MAX_PROOF_HINT_LENGTH = 200;
+const MAX_VERIFIABILITY_NOTES_LENGTH = 500;
+const GUIDE_CHECKLIST_KEYS = ['routineBreaking', 'named', 'photoProvable', 'cadenceAppropriate', 'noRedFlagVerbs'] as const;
+type GuideChecklistKey = (typeof GUIDE_CHECKLIST_KEYS)[number];
+export type GuideChecklist = Record<GuideChecklistKey, boolean>;
 
 export interface DevChallengeRow {
   id: string;
@@ -32,6 +41,10 @@ export interface DevChallengeRow {
   place_lat: number | null;
   place_lng: number | null;
   radius_meters: number | null;
+  proof_accept: string | null;
+  proof_reject: string | null;
+  verifiability_notes: string | null;
+  guide_checklist: string | null; // JSON-encoded GuideChecklist
   active: number;
   created_by: string;
   created_at: number;
@@ -42,6 +55,11 @@ export async function getDevChallengeById(env: Env, id: string): Promise<DevChal
   return env.DB.prepare('SELECT * FROM dev_challenges WHERE id = ? AND active = 1').bind(id).first<DevChallengeRow>();
 }
 
+// Deliberately omits proof_accept/proof_reject/verifiability_notes/
+// guide_checklist — those are verification-prompt and audit-trail data for
+// the admin dashboard only. Leaking "what a submission needs to avoid" to
+// end users would make a challenge easier to fake, and verifiability_notes
+// is internal authoring reasoning, not user-facing copy.
 function toClientChallenge(row: DevChallengeRow) {
   return {
     id: row.id,
@@ -54,6 +72,18 @@ function toClientChallenge(row: DevChallengeRow) {
     proofType: row.proof_type,
     ...(row.streak_target != null ? { streakTarget: row.streak_target } : {}),
   };
+}
+
+function parseGuideChecklist(raw: string | null): GuideChecklist | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    const result = {} as GuideChecklist;
+    for (const key of GUIDE_CHECKLIST_KEYS) result[key] = !!parsed[key];
+    return result;
+  } catch {
+    return null;
+  }
 }
 
 function toAdminShape(row: DevChallengeRow) {
@@ -70,6 +100,10 @@ function toAdminShape(row: DevChallengeRow) {
     placeLat: row.place_lat,
     placeLng: row.place_lng,
     radiusMeters: row.radius_meters,
+    proofAccept: row.proof_accept,
+    proofReject: row.proof_reject,
+    verifiabilityNotes: row.verifiability_notes,
+    guideChecklist: parseGuideChecklist(row.guide_checklist),
     active: !!row.active,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -90,6 +124,10 @@ function parseChallengeBody(body: Record<string, unknown>): {
   proofType: ProofType;
   streakTarget: number | null;
   location: LocationFields | null;
+  proofAccept: string | null;
+  proofReject: string | null;
+  verifiabilityNotes: string | null;
+  guideChecklist: string | null;
 } | Response {
   const title = String(body.title ?? '').trim().slice(0, MAX_TITLE_LENGTH);
   const desc = String(body.desc ?? '').trim().slice(0, MAX_DESC_LENGTH);
@@ -119,7 +157,27 @@ function parseChallengeBody(body: Record<string, unknown>): {
   const location = parseOptionalLocation(body);
   if (location instanceof Response) return location;
 
-  return { title, desc, tokens, cadence, cat, verify, proofType, streakTarget, location };
+  // All four below are optional — a row with none of them set behaves
+  // exactly as before (see verify.ts Phase 2). Short guidance phrases only,
+  // never a free-text prompt override — see MAX_PROOF_HINT_LENGTH's comment.
+  const proofAcceptRaw = body.proofAccept;
+  const proofAccept = proofAcceptRaw == null ? null : String(proofAcceptRaw).trim().slice(0, MAX_PROOF_HINT_LENGTH) || null;
+  const proofRejectRaw = body.proofReject;
+  const proofReject = proofRejectRaw == null ? null : String(proofRejectRaw).trim().slice(0, MAX_PROOF_HINT_LENGTH) || null;
+  const verifiabilityNotesRaw = body.verifiabilityNotes;
+  const verifiabilityNotes =
+    verifiabilityNotesRaw == null ? null : String(verifiabilityNotesRaw).trim().slice(0, MAX_VERIFIABILITY_NOTES_LENGTH) || null;
+
+  let guideChecklist: string | null = null;
+  if (body.guideChecklist != null) {
+    if (typeof body.guideChecklist !== 'object') return error('guideChecklist must be an object of booleans');
+    const raw = body.guideChecklist as Record<string, unknown>;
+    const normalized = {} as GuideChecklist;
+    for (const key of GUIDE_CHECKLIST_KEYS) normalized[key] = !!raw[key];
+    guideChecklist = JSON.stringify(normalized);
+  }
+
+  return { title, desc, tokens, cadence, cat, verify, proofType, streakTarget, location, proofAccept, proofReject, verifiabilityNotes, guideChecklist };
 }
 
 // GET /challenges/custom — every logged-in user needs this to see custom
@@ -153,8 +211,8 @@ export async function handleAdminCreateChallenge(request: Request, env: Env): Pr
   const id = crypto.randomUUID();
   const now = Date.now();
   await env.DB.prepare(
-    `INSERT INTO dev_challenges (id, title, desc, tokens, cadence, cat, verify_type, proof_type, streak_target, place_lat, place_lng, radius_meters, active, created_by, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
+    `INSERT INTO dev_challenges (id, title, desc, tokens, cadence, cat, verify_type, proof_type, streak_target, place_lat, place_lng, radius_meters, proof_accept, proof_reject, verifiability_notes, guide_checklist, active, created_by, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
   )
     .bind(
       id,
@@ -169,6 +227,10 @@ export async function handleAdminCreateChallenge(request: Request, env: Env): Pr
       parsed.location?.placeLat ?? null,
       parsed.location?.placeLng ?? null,
       parsed.location?.radiusMeters ?? null,
+      parsed.proofAccept,
+      parsed.proofReject,
+      parsed.verifiabilityNotes,
+      parsed.guideChecklist,
       auth.id,
       now,
       now
@@ -198,7 +260,7 @@ export async function handleAdminUpdateChallenge(request: Request, env: Env, id:
     const parsed = parseChallengeBody(body);
     if (parsed instanceof Response) return parsed;
     await env.DB.prepare(
-      `UPDATE dev_challenges SET title = ?, desc = ?, tokens = ?, cadence = ?, cat = ?, verify_type = ?, proof_type = ?, streak_target = ?, place_lat = ?, place_lng = ?, radius_meters = ?, updated_at = ? WHERE id = ?`
+      `UPDATE dev_challenges SET title = ?, desc = ?, tokens = ?, cadence = ?, cat = ?, verify_type = ?, proof_type = ?, streak_target = ?, place_lat = ?, place_lng = ?, radius_meters = ?, proof_accept = ?, proof_reject = ?, verifiability_notes = ?, guide_checklist = ?, updated_at = ? WHERE id = ?`
     )
       .bind(
         parsed.title,
@@ -212,6 +274,10 @@ export async function handleAdminUpdateChallenge(request: Request, env: Env, id:
         parsed.location?.placeLat ?? null,
         parsed.location?.placeLng ?? null,
         parsed.location?.radiusMeters ?? null,
+        parsed.proofAccept,
+        parsed.proofReject,
+        parsed.verifiabilityNotes,
+        parsed.guideChecklist,
         Date.now(),
         id
       )

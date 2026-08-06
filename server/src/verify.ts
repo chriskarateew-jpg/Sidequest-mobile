@@ -47,7 +47,7 @@ export async function handleVerify(request: Request, env: Env): Promise<Response
     if (!window.ok) return error(window.reason, 409);
   }
 
-  const { title, desc } = catalogEntry;
+  const { title, desc, proofAccept, proofReject } = catalogEntry;
 
   let anthropicRes: Response;
   try {
@@ -66,7 +66,7 @@ export async function handleVerify(request: Request, env: Env): Promise<Response
             role: 'user',
             content: [
               { type: 'image', source: { type: 'base64', media_type: mediaType, data: photoBase64 } },
-              { type: 'text', text: buildPrompt(title, desc) },
+              { type: 'text', text: buildPrompt(title, desc, proofAccept, proofReject) },
             ],
           },
         ],
@@ -103,7 +103,18 @@ export async function handleVerify(request: Request, env: Env): Promise<Response
   }
 }
 
-function buildPrompt(title: string, desc?: string): string {
+// proofAccept/proofReject are optional per-task hints authored by a
+// developer via the dev_challenges admin API (see dev-challenges.ts's
+// MAX_PROOF_HINT_LENGTH) — short guidance phrases only, already
+// length-capped at write time. Re-capped here too as defense in depth, in
+// case a row is ever written by something other than that endpoint (e.g. a
+// future migration script). They're appended as extra criteria for this
+// specific task, never allowed to replace the surrounding instructions —
+// a task with neither set produces the exact same prompt as before this
+// function grew these two parameters.
+const PROOF_HINT_DEFENSIVE_CAP = 200;
+
+function buildPrompt(title: string, desc?: string, proofAccept?: string, proofReject?: string): string {
   return [
     'You are checking photo proof submitted for a personal-growth app challenge.',
     `Challenge: "${title}"${desc ? `\nDetails: ${desc}` : ''}`,
@@ -112,6 +123,8 @@ function buildPrompt(title: string, desc?: string): string {
     'Be reasonably lenient — a genuine, in-the-moment attempt counts even if imperfect or low-quality.',
     'A screenshot is acceptable only when the challenge details above explicitly call for one (a tracked app number, a sent message, a transfer confirmation) — reject a screenshot for any challenge whose proof should be a real-world photo instead.',
     'Reject images that are clearly unrelated to this specific challenge, a stock photo, or obviously reused from an unrelated context.',
+    ...(proofAccept ? [`Additionally, for this specific task, accept: ${proofAccept.slice(0, PROOF_HINT_DEFENSIVE_CAP)}`] : []),
+    ...(proofReject ? [`Additionally, for this specific task, reject: ${proofReject.slice(0, PROOF_HINT_DEFENSIVE_CAP)}`] : []),
     '',
     'Respond with ONLY minified JSON, no other text: {"matches": boolean, "reason": "one short sentence"}',
   ].join('\n');

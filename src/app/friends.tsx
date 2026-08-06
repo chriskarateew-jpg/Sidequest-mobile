@@ -6,8 +6,7 @@ import { BackButton } from '@/components/back-button';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
-import { CHALLENGES } from '@/lib/data';
-import { useGumpaStore } from '@/lib/store';
+import { findChallengeById, useGumpaStore } from '@/lib/store';
 import { useToastStore } from '@/lib/toast';
 
 interface FriendRow {
@@ -38,7 +37,7 @@ interface DuelRow {
 }
 
 function challengeTitle(id: string): string {
-  return CHALLENGES.find((c) => c.id === id)?.title ?? id;
+  return findChallengeById(id)?.title ?? id;
 }
 
 function timeLeft(endsAt: number | null): string {

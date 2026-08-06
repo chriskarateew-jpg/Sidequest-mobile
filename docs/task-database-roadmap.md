@@ -1,0 +1,388 @@
+# Task database roadmap
+
+A roadmap prompt for turning task creation into a database-backed workflow:
+every task gets a Title, Description, Token Reward, submission method, an
+explicit verifiability record, and a structured Claude Haiku verification
+prompt — all editable over time without an app-store release, including
+adding brand-new tasks and deleting/deactivating existing ones, entirely
+from the dashboard. Feed this whole file to a fresh Claude session to
+implement it. It is a plan, not yet implemented — nothing described below
+exists until a phase's checkboxes are done.
+
+Four design questions were already decided with the user (2026-08-06) and
+are **locked in** — don't re-ask them, don't re-litigate them, just build to
+them:
+
+1. **Migrate the 35 static tasks into the database too** (actually 40 — see
+   Phase 3's correction note) — one source of truth, not two parallel
+   systems.
+2. **Structured verification hints, not a free-text prompt override** —
+   each task gets fields (what counts as proof, what to reject) that get
+   merged into a guarded template, not an arbitrary string sent straight to
+   Claude.
+3. **Build a separate web dashboard** — not an extension of the in-app
+   `src/app/dev.tsx` screens.
+4. **Automated checks where mechanical, checklist for the rest** — reject
+   red-flag words, enforce required fields; leave "is this actually
+   routine-breaking / fakeable" to human judgment, recorded as data.
+
+## Current state (verified against the code on 2026-08-06)
+
+This is not a greenfield build — a developer-authored task database already
+exists and is live in production. The gap is narrower than "build a
+database"; it's "extend the one that's already load-bearing."
+
+- **`dev_challenges` table** (`server/migrations/0016_dev_admin.sql`) — id,
+  title, desc, tokens, cadence, cat, verify_type, proof_type, streak_target,
+  place_lat/lng, radius_meters, active, created_by, created_at, updated_at.
+  Soft-deleted only (`active=0`), never hard-deleted, because a handed-out id
+  must stay resolvable forever (past completions/posts reference it).
+- **Full CRUD admin API** in `server/src/dev-challenges.ts`
+  (`handleAdminListChallenges` / `Create` / `Update` / `Delete`), gated by
+  `requireDeveloper` (`server/src/auth.ts:145`).
+- **Already wired into resolution**: `server/src/catalog.ts`'s
+  `resolveBaseCatalogEntry` checks the static in-memory `CHALLENGE_CATALOG`
+  (`server/src/tokens.ts`) first, then `local_challenges`, then
+  `dev_challenges`, then `timed_challenges`. `/verify` and `/complete` both
+  go through this, so a `dev_challenges` row is already a first-class task,
+  indistinguishable to a user from a static one.
+- **Already surfaced client-side**: `src/lib/store.ts`'s `pickSuggestions`
+  merges `[...CHALLENGES (bundled static), ...local, ...custom (dev)]` into
+  one suggestion pool. `customChallenges` is fetched from
+  `GET /challenges/custom` on a 3-minute TTL (`CUSTOM_CHALLENGES_TTL_MS`,
+  `store.ts:23`).
+- **An in-app admin UI already exists**: `src/app/dev.tsx` +
+  `src/app/dev-challenge-form.tsx`. Decision 3 above means this stays as a
+  secondary/fallback surface, not the primary one going forward.
+
+What's actually missing:
+
+- **No per-task verification prompt data.** `server/src/verify.ts`'s
+  `buildPrompt(title, desc)` (line 106) is one generic template shared by
+  every challenge source — static, local, dev, timed. There is nowhere to
+  say "for this task, a blurry gym mirror selfie is fine" or "for this task,
+  reject anything without a visible street sign."
+- **No stored verifiability record.** `docs/challenge-writing-guide.md`'s
+  five tests (routine-breaking, named not categorized, photo-provable,
+  cadence-appropriate, no red-flag verbs) are applied by a human/AI at
+  write time and then forgotten — nothing persists the reasoning or a
+  pass/fail per task.
+- **Two parallel catalogs.** The 35 tasks in `src/lib/data.ts` /
+  `server/src/tokens.ts` are hardcoded and require a deploy to change;
+  `dev_challenges` rows don't.
+
+## Where the database lives
+
+No new database. Everything lands in the **same Cloudflare D1 instance**
+already used for users, posts, `local_challenges`, `dev_challenges`, etc.
+(`server/wrangler.toml`). This is additive: new nullable columns on
+`dev_challenges`, plus the migration of the 35 static rows into it — not a
+new binding, not new infra, and it stays inside the free-tier constraints
+already called out in `AGENTS.md`.
+
+The **dashboard** (decision 3) is new surface area, but it doesn't need new
+backend infra either: it's a small static web app (recommend Cloudflare
+Pages, matching the rest of the stack, free tier, effectively zero
+incremental cost for developer-only traffic) that authenticates through the
+**existing** login endpoints and calls the **existing** (extended)
+`requireDeveloper`-gated admin API. No parallel auth system to build.
+
+## Feasibility assessment
+
+**Functional risk: low.** The resolution path (`resolveBaseCatalogEntry`),
+the CRUD API, and the soft-delete/immutable-id discipline are already
+proven in production for `dev_challenges` and `local_challenges`. Adding
+verification-hint columns and a verifiability record is schema-additive —
+existing rows get NULL/defaults, `buildPrompt` falls back to today's exact
+generic template when hints are absent, so nothing existing breaks mid-
+migration.
+
+**Efficiency: no meaningful cost impact.** Catalog resolution is already a
+single indexed primary-key lookup per source per request; adding columns
+doesn't change that. No new Anthropic calls are introduced — still one
+Haiku call per `/verify` submission, just a richer prompt. The dashboard's
+traffic is developer-only (you), negligible against Cloudflare free-tier
+request/CPU quotas.
+
+**Verifiability of the migration itself: needs a deliberate check, not an
+assumption.** Two things must be true before the static arrays are deleted:
+
+1. **Every migrated id resolves identically.** Write a one-off script that,
+   for each of the 35 ids, compares the DB row's resolved fields
+   (`resolveBaseCatalogEntry` output) against the current
+   `CHALLENGE_CATALOG` entry field-by-field. Any diff blocks the cutover.
+2. **The client's offline/cold-start path doesn't quietly regress.**
+   `CHALLENGES` in `data.ts` is bundled into the app today — suggestions
+   render instantly with zero network round trip, including on first launch
+   before any fetch completes. Moving those 35 into the DB means the client
+   now depends on `GET /challenges/custom` (or a generalized successor) for
+   what used to be always-available. This needs an explicit answer, not a
+   silent behavior change — see Phase 3.
+
+## Phase 1 — Schema: verification hints + verifiability record ✅ done (2026-08-06)
+
+- [x] Add columns to `dev_challenges` (new migration
+      `0019_task_verification_fields.sql`, applied to the local D1 dev
+      database and schema-verified with `PRAGMA table_info`; **not yet
+      applied to the remote/production database** — that's a gated
+      production action, run it explicitly when ready):
+  - `proof_accept TEXT` — nullable, short phrase(s) describing what counts
+    as valid proof for this specific task (e.g. "a visible street sign or
+    landmark in frame").
+  - `proof_reject TEXT` — nullable, what to explicitly reject beyond the
+    generic template's defaults (e.g. "reject if no gym equipment visible").
+  - `verifiability_notes TEXT` — nullable, free text: the human's reasoning
+    for why this task passes the five-test guide, written at authoring time
+    (not shown to Claude, not shown to end users — reviewer/audit trail
+    only).
+  - `guide_checklist TEXT` — nullable JSON blob of the five boolean checks
+    from `docs/challenge-writing-guide.md` (`routineBreaking`, `named`,
+    `photoProvable`, `cadenceAppropriate`, `noRedFlagVerbs`), each set by
+    whoever authored the task.
+- [x] Extend `DevChallengeRow`, `parseChallengeBody`, `toAdminShape` in
+      `server/src/dev-challenges.ts` for the new fields. Kept optional in
+      the create/update body — a row can exist without hints, falling back
+      to today's generic prompt. Also added a `GuideChecklist` type and
+      `GUIDE_CHECKLIST_KEYS` constant, and deliberately excluded the new
+      fields from `toClientChallenge` (verification hints and authoring
+      notes stay admin-only, never shipped to end users — see the comment
+      added above that function).
+- [x] Extend `CatalogEntry` in `server/src/tokens.ts` with optional
+      `proofAccept`/`proofReject`, threaded through `resolveBaseCatalogEntry`
+      in `catalog.ts`'s `devRow` branch so `/verify` can read them.
+
+## Phase 2 — Verification prompt integration ✅ done (2026-08-06)
+
+- [x] `server/src/verify.ts`'s `buildPrompt` now takes optional
+      `proofAccept`/`proofReject` and appends them as two extra guidance
+      lines right before the closing JSON-format instruction — the existing
+      leniency/screenshot/reject-unrelated language is untouched and comes
+      first, so a task with no hints produces the exact same prompt as
+      before.
+- [x] Hints are treated as data, not as a prompt themselves: they're already
+      capped to 200 chars at write time in `dev-challenges.ts`
+      (`MAX_PROOF_HINT_LENGTH`), and `buildPrompt` re-slices them again
+      defensively (`PROOF_HINT_DEFENSIVE_CAP`) in case a row is ever written
+      by something other than that endpoint (e.g. a future Phase 3 migration
+      script).
+- [x] Regression-tested the no-hints case: extracted `buildPrompt`'s exact
+      pre-Phase-2 logic into a standalone script and diffed its output
+      against the new function called with `proofAccept`/`proofReject`
+      both `undefined` — **byte-identical**, confirmed programmatically, not
+      just by inspection. Also confirmed the with-hints case appends
+      correctly (both lines present, existing lines unchanged).
+      - **Not done**: a live round-trip through the real Anthropic API — the
+        `ANTHROPIC_API_KEY` in `server/.dev.vars` is a placeholder, not a
+        real key, so there's nothing to call locally. The real key only
+        lives on the deployed Worker (`wrangler secret put`, production).
+        A true end-to-end check (real photo, real Haiku call, hint-bearing
+        task) is Phase 6's job once Phase 5's dashboard exists to actually
+        create a task with hints set — don't skip that check when you get
+        there, this phase only proved the prompt-construction logic, not
+        the model's reaction to it.
+
+## Phase 3 — Migrate the static catalog into the database ✅ shipped to production (2026-08-06)
+
+**Correction**: the static catalog was actually **40** tasks (15 daily / 17
+weekly / 8 monthly), not 35 — the earlier estimate was off; every step below
+accounts for all 40.
+
+- [x] **Offline-fallback decision**: fetch-and-cache-to-disk, per the user
+      (2026-08-06). Turned out to need **no new client code** — `store.ts`
+      already persists `customChallenges` to AsyncStorage as part of the
+      whole store (`schedulePersist`/`hydrate`) and fetches it on launch via
+      `refreshCustomChallenges` (wired up in `_layout.tsx`) whenever a
+      session token exists. That mechanism, built for developer-authored
+      extras, is now what *every* task relies on for cold-start/offline
+      behavior — no separate seed set needed.
+- [x] **Drift check before picking a source of truth**: diffed `data.ts`
+      against `tokens.ts` field-by-field (script, not eyeballing). Zero
+      differences in tokens/cadence/cat/verify/proofType/streakTarget across
+      all 40 — but 29 of 40 `desc` fields had drifted: `tokens.ts` had
+      picked up em dashes (`—`) that `data.ts` never had, i.e. `tokens.ts`
+      was quietly violating `AGENTS.md`'s "no em dashes in challenge
+      titles/descriptions" rule. Used `data.ts`'s text as the migration
+      source (compliant, and what users already see) — this migration
+      incidentally fixes that drift instead of baking it into the new row.
+- [x] One-off migration script generated
+      `server/migrations/0020_migrate_static_challenges.sql` — 40 `INSERT`s
+      into `dev_challenges` using the **exact same ids** (`d-water`,
+      `w-tourist`, etc.), `created_by = 'migration'`, `active = 1`.
+      `guide_checklist`/`verifiability_notes` deliberately left
+      null/flagged rather than backfilled as "passing" — these 40 predate
+      the five-test guide and have **not** been re-reviewed against it by
+      this migration; that's a real follow-up worth doing separately, not
+      a claim this migration makes for you.
+- [x] Applied to the **local** D1 dev database and round-trip verified: a
+      script re-queried all 40 rows and diffed every field (title, desc,
+      tokens, cadence, cat, verify_type, proof_type, streak_target, active,
+      created_by) against the source — **zero mismatches**. Also confirmed
+      `SELECT * FROM dev_challenges WHERE active = 1` (what
+      `GET /challenges/custom` actually runs) returns the right 15/17/8
+      daily/weekly/monthly split.
+- [x] **Caught and fixed two narrow resolvers that would have silently
+      broken once the static catalog emptied** (found by grepping every
+      direct `CHALLENGE_CATALOG`/`CHALLENGES` usage before touching either,
+      not by assumption):
+  - `server/src/duels.ts`'s `handleCreateDuel` read
+    `CHALLENGE_CATALOG[challengeId]` directly instead of going through
+    `resolveBaseCatalogEntry` — meant duels could only ever be created
+    against a static-catalog id, never a local/dev/timed one. Fixed to use
+    `resolveBaseCatalogEntry` (async), matching the pattern `verify.ts` and
+    `complete.ts` already use.
+  - `src/app/friends.tsx`'s `challengeTitle(id)` looked up a duel's display
+    title from the static `CHALLENGES` array only, falling back to the raw
+    id if not found — would have shown ids like `d-water` instead of
+    "Chug a gallon of water" for every migrated task. Fixed to use
+    `findChallengeById` from `store.ts` (checks local + custom too).
+  - `src/app/dev-boost-form.tsx` also reads `CHALLENGES` directly for its
+    boost-target picker, but already separately spreads in
+    `customChallenges` too — no fix needed, migrated tasks show up via that
+    second source once the static array is empty.
+- [x] Removed the 40 entries from `CHALLENGE_CATALOG` in
+      `server/src/tokens.ts` (now an empty, documented `{}` — kept rather
+      than deleted, since `CatalogEntry`/`Cadence`/`VerifyType`/`ProofType`
+      are still used throughout `server/src`) and emptied `CHALLENGES` in
+      `src/lib/data.ts` to `[]` with an explanatory comment. Both
+      typecheck clean.
+- [x] Updated `docs/challenge-writing-guide.md`'s header note: it no longer
+      says "the static catalog only" — it now points at `dev_challenges`
+      as the thing being authored, with a note that the old static array
+      was migrated in via `0020_migrate_static_challenges.sql`.
+
+### Shipped: both gated actions run, with an unplanned detour
+
+Both ran with explicit user confirmation, in order, and are now live:
+
+1. **`wrangler d1 migrations apply sidequest-db --remote`** — first attempt
+   failed: `0015_rewards_interest.sql` errored with `table
+   rewards_interest already exists`. Investigated rather than forced
+   through: remote D1's `d1_migrations` bookkeeping table only had
+   migrations through `0014_user_avatar.sql` recorded, but the actual
+   schema (verified via `PRAGMA table_info`/`sqlite_master` — not assumed)
+   already had `rewards_interest`, `dev_challenges`, `token_boosts`, and
+   `timed_challenges` (migrations 0015-0018), including 0018's
+   `place_lat`/`place_lng`/`radius_meters` columns, but **not** 0019's new
+   columns. Conclusion: migrations 0015-0018 were applied to remote at some
+   point outside `wrangler d1 migrations apply` (e.g. a direct
+   `wrangler d1 execute --remote --file=`), so their bookkeeping rows were
+   never written, but 0019/0020 genuinely hadn't run yet.
+   - **Fix** (separately confirmed with the user before running, since it
+     wasn't the literal command already approved): manually inserted the 4
+     missing bookkeeping rows (`INSERT INTO d1_migrations (name) VALUES
+     (...)`) to match verified reality, touching no app data or schema.
+     Re-ran `wrangler d1 migrations apply sidequest-db --remote`, which then
+     correctly applied only `0019_task_verification_fields.sql` and
+     `0020_migrate_static_challenges.sql`.
+   - Verified post-migration: remote `dev_challenges` has exactly 40 active
+     `created_by = 'migration'` rows, 15/17/8 daily/weekly/monthly — same
+     split as local.
+2. **`wrangler deploy`** — succeeded (`sidequest-verify`, version
+   `1cf1e8e5-27b8-44bf-a0fb-0b6dbba558f1`). Smoke-tested with an
+   unauthenticated `GET /auth/me` against the live URL, got the expected
+   `401` (not a crash), confirming the deploy booted cleanly.
+
+**Note for future migrations against this database**: the `d1_migrations`
+bookkeeping table cannot be trusted alone to reflect remote schema state —
+confirmed drift exists from before this session. Spot-check actual schema
+(`PRAGMA table_info`) rather than assuming `migrations apply`'s dry-run
+list is complete, especially before any future migration that drops or
+alters a column.
+
+**Still open**: a full authenticated end-to-end pass (real photo through
+`/verify` for a migrated id) hasn't been done — that's explicitly Phase 6's
+job, not skipped here, since Phase 5's dashboard doesn't exist yet to
+generate a task with verification hints to test against. Don't skip it
+when you get there.
+
+**Uncommitted**: none of this session's changes have been committed to git
+yet (migrations, `verify.ts`, `dev-challenges.ts`, `catalog.ts`,
+`tokens.ts`, `duels.ts`, `friends.tsx`, `data.ts`, this roadmap file,
+`challenge-writing-guide.md`) — say the word when ready.
+
+## Phase 4 — Automated guide enforcement
+
+- [ ] In `parseChallengeBody` (`server/src/dev-challenges.ts`), add
+      mechanical checks that don't require judgment:
+  - Reject title/desc containing bare red-flag verbs *without* a specific
+    object following them — this can only be a heuristic (the guide itself
+    notes "try an Ethiopian restaurant" passes while "try new food" fails,
+    same verb) so implement as a warning surfaced in the dashboard, not a
+    hard save-blocking rule, unless you're confident the heuristic won't
+    false-positive on legitimate tasks.
+  - Enforce `proofType === 'screenshot' | 'either'` whenever desc contains
+    the literal word "screenshot" and vice versa (mirrors the existing
+    `CHALLENGES.forEach` runtime check at the bottom of `src/lib/data.ts` —
+    port that exact check into the DB write path instead of only catching
+    it at static-array load time).
+  - Require `streakTarget` when `verify === 'streak'` (already enforced for
+    static via the `data.ts` throw; port to `parseChallengeBody`, which
+    already partially does this — confirm it's still there after Phase 1's
+    edits).
+  - Require `guide_checklist`'s five keys to all be explicitly `true`
+    before a row can be set `active = 1` (a developer can still save a
+    draft with unchecked boxes, just can't publish it) — this is the
+    mechanical proxy for "was the checklist actually applied," even though
+    the underlying judgment stays human.
+- [ ] Leave routine-breaking / photo-fakeability / cadence-scope judgment as
+      dashboard-visible fields (`verifiability_notes`, `guide_checklist`)
+      that a human fills in, per decision 4 — no LLM-in-the-loop gate for
+      these, to avoid adding cost and a new failure mode for a subjective
+      call.
+
+## Phase 5 — Standalone web dashboard
+
+- [ ] New lightweight web app (recommend Vite + React, deployed to
+      Cloudflare Pages) — not part of the Expo app bundle.
+- [ ] Auth: reuse the existing email/password login endpoint, store the JWT,
+      send it as a Bearer token to the admin API. No new auth system.
+- [ ] Views:
+  - List all tasks (active + inactive) with the fields from
+    `toAdminShape` plus the new Phase 1 fields, filterable by cadence/
+    category/active state — this is the "easy to visualize" requirement.
+  - **Add**: a "New task" form (Title, Description, Token Reward, cadence,
+    category, verify type, proof type, streak target (conditional),
+    proof_accept, proof_reject, the five-item guide checklist,
+    verifiability_notes) that calls `POST` on the existing
+    `handleAdminCreateChallenge` endpoint — this is the primary way new
+    tasks get authored going forward, replacing hand-editing `data.ts`.
+  - Edit: the same form pre-filled, calling the existing
+    `handleAdminUpdateChallenge` endpoint (`PUT`/`PATCH` on the row's id).
+  - A live preview of the exact prompt `/verify` would send to Claude for
+    this task (render the merged template client-side or via a new
+    read-only admin endpoint that returns it) — this directly answers "what
+    the Claude Haiku call prompt really is" per task, visibly, before
+    publishing.
+  - **Delete**: a per-task "Delete" action in the list/edit view, calling
+    the existing `handleAdminDeleteChallenge` endpoint. This is a
+    **soft delete only** (sets `active = 0`), same as the API does today —
+    do **not** add a hard-delete path. `dev-challenges.ts`'s own header
+    comment states why: an id already handed to a client, or referenced by
+    a past completion/post, must stay resolvable forever
+    (`resolveBaseCatalogEntry` would otherwise 404 on old history). The
+    dashboard should present this plainly as "Delete" to the developer
+    (that's the mental model — the task disappears from suggestions
+    immediately) while the underlying mechanism stays a deactivation. A
+    "Reactivate" action undoes it, same as it does today via
+    `{"active": true}`.
+- [ ] Extend the admin API surface minimally if needed (e.g. a
+      `GET /admin/challenges/:id/preview-prompt` endpoint) rather than
+      duplicating prompt-building logic in the dashboard — the dashboard
+      should call the same `buildPrompt`-adjacent logic the Worker actually
+      uses, not a reimplementation that can drift out of sync.
+
+## Phase 6 — Verification pass (do this before calling any phase "done")
+
+- [ ] Re-run the diff script from Phase 3 one more time after all phases
+      land, to confirm nothing drifted during Phase 4/5 work.
+- [ ] Manually create one new task end-to-end through the dashboard, submit
+      a real photo against it through the app, confirm `/verify` uses the
+      per-task hints (check the actual outbound Anthropic request body, not
+      just the verify result).
+  - [ ] Follow the [verify](../.claude/skills) skill's spirit here even
+      though this is a backend/data change: exercise the real flow (create
+      task → app shows it as a suggestion → submit photo → verify → complete
+      → appears in feed), don't stop at "the migration script ran."
+- [ ] Confirm a pre-existing completed task's history (a post referencing a
+      migrated static id) still renders correctly — the id-stability
+      requirement from Phase 3 is only real if this is checked, not assumed.
