@@ -300,35 +300,64 @@ yet (migrations, `verify.ts`, `dev-challenges.ts`, `catalog.ts`,
 `tokens.ts`, `duels.ts`, `friends.tsx`, `data.ts`, this roadmap file,
 `challenge-writing-guide.md`) — say the word when ready.
 
-## Phase 4 — Automated guide enforcement
+## Phase 4 — Automated guide enforcement ✅ done (2026-08-06)
 
-- [ ] In `parseChallengeBody` (`server/src/dev-challenges.ts`), add
+- [x] In `parseChallengeBody` (`server/src/dev-challenges.ts`), added
       mechanical checks that don't require judgment:
-  - Reject title/desc containing bare red-flag verbs *without* a specific
-    object following them — this can only be a heuristic (the guide itself
-    notes "try an Ethiopian restaurant" passes while "try new food" fails,
-    same verb) so implement as a warning surfaced in the dashboard, not a
-    hard save-blocking rule, unless you're confident the heuristic won't
-    false-positive on legitimate tasks.
-  - Enforce `proofType === 'screenshot' | 'either'` whenever desc contains
-    the literal word "screenshot" and vice versa (mirrors the existing
-    `CHALLENGES.forEach` runtime check at the bottom of `src/lib/data.ts` —
-    port that exact check into the DB write path instead of only catching
-    it at static-array load time).
-  - Require `streakTarget` when `verify === 'streak'` (already enforced for
-    static via the `data.ts` throw; port to `parseChallengeBody`, which
-    already partially does this — confirm it's still there after Phase 1's
-    edits).
-  - Require `guide_checklist`'s five keys to all be explicitly `true`
-    before a row can be set `active = 1` (a developer can still save a
-    draft with unchecked boxes, just can't publish it) — this is the
-    mechanical proxy for "was the checklist actually applied," even though
-    the underlying judgment stays human.
-- [ ] Leave routine-breaking / photo-fakeability / cadence-scope judgment as
+  - **Red-flag verb warning**: `RED_FLAG_VERBS` (try/explore/be more/work
+    on/think about/appreciate/embrace) checked against `title + desc` via
+    word-boundary regex. Genuinely can't tell "try an Ethiopian restaurant"
+    (passes) from "try new food" (fails) mechanically, so this is
+    **non-blocking** — it's returned as a `warnings: string[]` array
+    alongside the created/updated challenge in the API response, for the
+    Phase 5 dashboard to surface to a human. Never causes a save to fail.
+  - **Photo/screenshot text check**: ported the exact three-part check that
+    used to live in `CHALLENGES.forEach` at the bottom of `src/lib/data.ts`
+    (title/desc must mention "photo" or "screenshot"; `proofType`
+    'screenshot'/'either' requires the literal word "screenshot"; `proofType`
+    'camera' requires "photo") into `parseChallengeBody` itself, so it's
+    enforced on every DB write (create and full-body update), not just at
+    static-array module load time. **Blocking**, matching the old code's
+    `throw` — this exact bug class shipped 20+ times before the original
+    check existed.
+  - **`streakTarget` required when `verify === 'streak'`**: already present
+    from Phase 1 (`parseChallengeBody`'s existing block) — confirmed still
+    intact, no change needed.
+  - **`guide_checklist` gate before publish**: added `isGuideChecklistComplete`
+    (all five `GUIDE_CHECKLIST_KEYS` explicitly `true`). Enforced at the two
+    places a row can transition to `active = 1`:
+    - `handleAdminCreateChallenge` — new optional `active` field in the
+      create body (defaults to `true` to match pre-Phase-4 behavior when
+      omitted); if `active` resolves `true` and the checklist isn't
+      complete, the create is rejected with a 400 explaining to send
+      `active: false` to save as a draft instead. The INSERT's `active`
+      column changed from a hardcoded `1` to a bound param.
+    - `handleAdminUpdateChallenge`'s bare `{"active": true}` toggle path —
+      checked against the **existing** row's stored `guide_checklist`
+      before flipping it on.
+    - Deliberately **not** enforced on the full-body update path, which
+      never touches the `active` column at all (only the bare toggle does)
+      — matches the literal requirement ("before a row can be **set**
+      `active = 1`"), not a broader "active rows must always have a
+      complete checklist" invariant.
+- [x] Left routine-breaking / photo-fakeability / cadence-scope judgment as
       dashboard-visible fields (`verifiability_notes`, `guide_checklist`)
-      that a human fills in, per decision 4 — no LLM-in-the-loop gate for
-      these, to avoid adding cost and a new failure mode for a subjective
-      call.
+      that a human fills in, per decision 4 — no LLM-in-the-loop gate added
+      for these.
+- [x] **Verified no regression against the 40 migrated rows**: they were
+      inserted directly by `0020_migrate_static_challenges.sql` with
+      `active = 1`, bypassing this API entirely, so the new create/publish
+      gate never touches them retroactively. Confirmed against local D1:
+      `SELECT COUNT(*) FROM dev_challenges WHERE active = 1 AND created_by
+      = 'migration'` still returns 40 after this phase's changes.
+- [x] `npx tsc --noEmit` on `server/` — clean, no type errors.
+- **Not done**: a live round-trip through the actual admin API (create/
+  update HTTP calls hitting these new checks) — there's no dashboard yet
+  to drive that from (Phase 5), and no other client currently authors a
+  fresh task through `handleAdminCreateChallenge`/`handleAdminUpdateChallenge`
+  with these fields set. Logic was verified by typecheck plus comparison
+  against the pre-existing `data.ts` check it mirrors, not by an actual
+  HTTP round trip. Covered by Phase 6's end-to-end pass once Phase 5 exists.
 
 ## Phase 5 — Standalone web dashboard
 

@@ -28,6 +28,13 @@ const GUIDE_CHECKLIST_KEYS = ['routineBreaking', 'named', 'photoProvable', 'cade
 type GuideChecklistKey = (typeof GUIDE_CHECKLIST_KEYS)[number];
 export type GuideChecklist = Record<GuideChecklistKey, boolean>;
 
+// docs/challenge-writing-guide.md test 5 — these words are a signal to check
+// test 2 (named vs. categorized), not an automatic fail: "try an Ethiopian
+// restaurant" passes, "try new food" doesn't, same verb. Can't be told apart
+// mechanically, so this only ever produces a warning for a human to weigh,
+// never a save-blocking error.
+const RED_FLAG_VERBS = ['try', 'explore', 'be more', 'work on', 'think about', 'appreciate', 'embrace'];
+
 export interface DevChallengeRow {
   id: string;
   title: string;
@@ -86,6 +93,11 @@ function parseGuideChecklist(raw: string | null): GuideChecklist | null {
   }
 }
 
+function isGuideChecklistComplete(raw: string | null): boolean {
+  const parsed = parseGuideChecklist(raw);
+  return !!parsed && GUIDE_CHECKLIST_KEYS.every((key) => parsed[key] === true);
+}
+
 function toAdminShape(row: DevChallengeRow) {
   return {
     id: row.id,
@@ -128,6 +140,9 @@ function parseChallengeBody(body: Record<string, unknown>): {
   proofReject: string | null;
   verifiabilityNotes: string | null;
   guideChecklist: string | null;
+  // Non-blocking — surfaced by the dashboard (Phase 5) for a human to weigh,
+  // never used to reject a save. See RED_FLAG_VERBS above.
+  warnings: string[];
 } | Response {
   const title = String(body.title ?? '').trim().slice(0, MAX_TITLE_LENGTH);
   const desc = String(body.desc ?? '').trim().slice(0, MAX_DESC_LENGTH);
@@ -154,6 +169,30 @@ function parseChallengeBody(body: Record<string, unknown>): {
     if (!Number.isInteger(streakTarget) || streakTarget <= 0) return error('Streak target is required and must be a positive whole number');
   }
 
+  // Mirrors the exact runtime check that used to live at the bottom of
+  // src/lib/data.ts (CHALLENGES.forEach) — catches a challenge whose title+
+  // desc never actually names what to photograph, or whose proofType
+  // disagrees with what the text says. Blocking, not a warning: this class
+  // of bug shipped 20+ times before that check existed.
+  const proofText = `${title} ${desc}`.toLowerCase();
+  if (!proofText.includes('photo') && !proofText.includes('screenshot')) {
+    return error('Title/description must name a photo or screenshot target (mention "photo" or "screenshot")');
+  }
+  if ((proofType === 'screenshot' || proofType === 'either') && !proofText.includes('screenshot')) {
+    return error(`Proof type '${proofType}' requires the title or description to say "screenshot"`);
+  }
+  if (proofType === 'camera' && !proofText.includes('photo')) {
+    return error(`Proof type 'camera' requires the title or description to say "photo"`);
+  }
+
+  const warnings: string[] = [];
+  const matchedVerbs = RED_FLAG_VERBS.filter((verb) => new RegExp(`\\b${verb}\\b`).test(proofText));
+  if (matchedVerbs.length) {
+    warnings.push(
+      `Contains red-flag word(s) (${matchedVerbs.join(', ')}) that may signal a category instead of a named specific — see docs/challenge-writing-guide.md test 2.`
+    );
+  }
+
   const location = parseOptionalLocation(body);
   if (location instanceof Response) return location;
 
@@ -177,7 +216,7 @@ function parseChallengeBody(body: Record<string, unknown>): {
     guideChecklist = JSON.stringify(normalized);
   }
 
-  return { title, desc, tokens, cadence, cat, verify, proofType, streakTarget, location, proofAccept, proofReject, verifiabilityNotes, guideChecklist };
+  return { title, desc, tokens, cadence, cat, verify, proofType, streakTarget, location, proofAccept, proofReject, verifiabilityNotes, guideChecklist, warnings };
 }
 
 // GET /challenges/custom — every logged-in user needs this to see custom
@@ -208,11 +247,22 @@ export async function handleAdminCreateChallenge(request: Request, env: Env): Pr
   const parsed = parseChallengeBody(body);
   if (parsed instanceof Response) return parsed;
 
+  // Mechanical proxy for "the five-test guide was actually applied" (decision
+  // 4 — the underlying judgment stays human, but publishing requires the
+  // checklist to say so). Defaults to true to match the pre-Phase-4 behavior
+  // of every create being immediately active when no guideChecklist is sent.
+  const requestedActive = body.active !== false;
+  if (requestedActive && !isGuideChecklistComplete(parsed.guideChecklist)) {
+    return error(
+      'All five guide_checklist items must be true before a task can be published (active). Send active: false to save it as a draft instead.'
+    );
+  }
+
   const id = crypto.randomUUID();
   const now = Date.now();
   await env.DB.prepare(
     `INSERT INTO dev_challenges (id, title, desc, tokens, cadence, cat, verify_type, proof_type, streak_target, place_lat, place_lng, radius_meters, proof_accept, proof_reject, verifiability_notes, guide_checklist, active, created_by, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       id,
@@ -231,6 +281,7 @@ export async function handleAdminCreateChallenge(request: Request, env: Env): Pr
       parsed.proofReject,
       parsed.verifiabilityNotes,
       parsed.guideChecklist,
+      requestedActive ? 1 : 0,
       auth.id,
       now,
       now
@@ -238,7 +289,7 @@ export async function handleAdminCreateChallenge(request: Request, env: Env): Pr
     .run();
 
   const row = await env.DB.prepare('SELECT * FROM dev_challenges WHERE id = ?').bind(id).first<DevChallengeRow>();
-  return json({ challenge: row ? toAdminShape(row) : null });
+  return json({ challenge: row ? toAdminShape(row) : null, warnings: parsed.warnings });
 }
 
 export async function handleAdminUpdateChallenge(request: Request, env: Env, id: string): Promise<Response> {
@@ -252,13 +303,18 @@ export async function handleAdminUpdateChallenge(request: Request, env: Env, id:
   if (!body) return error('Invalid JSON body');
 
   // A bare {"active": false} toggle doesn't need every other field re-sent.
+  let warnings: string[] = [];
   if (Object.keys(body).length === 1 && typeof body.active === 'boolean') {
+    if (body.active && !isGuideChecklistComplete(existing.guide_checklist)) {
+      return error('All five guide_checklist items must be true before this task can be published (active).');
+    }
     await env.DB.prepare('UPDATE dev_challenges SET active = ?, updated_at = ? WHERE id = ?')
       .bind(body.active ? 1 : 0, Date.now(), id)
       .run();
   } else {
     const parsed = parseChallengeBody(body);
     if (parsed instanceof Response) return parsed;
+    warnings = parsed.warnings;
     await env.DB.prepare(
       `UPDATE dev_challenges SET title = ?, desc = ?, tokens = ?, cadence = ?, cat = ?, verify_type = ?, proof_type = ?, streak_target = ?, place_lat = ?, place_lng = ?, radius_meters = ?, proof_accept = ?, proof_reject = ?, verifiability_notes = ?, guide_checklist = ?, updated_at = ? WHERE id = ?`
     )
@@ -285,7 +341,7 @@ export async function handleAdminUpdateChallenge(request: Request, env: Env, id:
   }
 
   const row = await env.DB.prepare('SELECT * FROM dev_challenges WHERE id = ?').bind(id).first<DevChallengeRow>();
-  return json({ challenge: row ? toAdminShape(row) : null });
+  return json({ challenge: row ? toAdminShape(row) : null, warnings });
 }
 
 // Soft delete only — see file header. Deactivates rather than removes.
