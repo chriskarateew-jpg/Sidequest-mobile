@@ -165,19 +165,7 @@ function seededShuffle<T>(arr: T[], seedStr: string): T[] {
 function pickSuggestions(cadence: Cadence, count: number, extra: Challenge[], custom: Challenge[]): Challenge[] {
   const pool = [...CHALLENGES, ...extra, ...custom].filter((c) => c.cadence === cadence);
   const shuffled = seededShuffle(pool, cadence + ':' + periodKeyFor(cadence));
-  const picked: Challenge[] = [];
-  const usedCats = new Set<string>();
-  for (const c of shuffled) {
-    if (picked.length >= count) break;
-    if (!usedCats.has(c.cat)) {
-      picked.push(c);
-      usedCats.add(c.cat);
-    }
-  }
-  for (const c of shuffled) {
-    if (picked.length >= count) break;
-    if (!picked.includes(c)) picked.push(c);
-  }
+  const picked = shuffled.slice(0, count);
 
   const localForCadence = extra.filter((c) => c.cadence === cadence);
   if (localForCadence.length > 0 && !picked.some((c) => c.isLocal)) {

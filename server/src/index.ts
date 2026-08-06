@@ -31,7 +31,7 @@ import {
 } from './dev-challenges';
 import { handleCancelDuel, handleCreateDuel, handleListDuels, handleRespondDuel } from './duels';
 import type { Env } from './env';
-import { handleGetPhoto, handleListFeed, handleListMyPosts, handleToggleKudos } from './feed';
+import { handleDeletePost, handleGetPhoto, handleListFeed, handleListMyPosts, handleToggleKudos } from './feed';
 import { handleFriendRequest, handleFriendRespond, handleListFriends, handleSearchUsers } from './friends';
 import { handleCreateGroup, handleGetGroup, handleJoinGroup, handleListMyGroups } from './groups';
 import { CORS_HEADERS, error } from './http';
@@ -82,6 +82,9 @@ export default {
 
     const kudosMatch = method === 'POST' ? pathname.match(/^\/posts\/([^/]+)\/kudos$/) : null;
     if (kudosMatch) return handleToggleKudos(request, env, kudosMatch[1]);
+
+    const deletePostMatch = method === 'DELETE' ? pathname.match(/^\/posts\/([^/]+)$/) : null;
+    if (deletePostMatch) return handleDeletePost(request, env, deletePostMatch[1]);
 
     const listCommentsMatch = method === 'GET' ? pathname.match(/^\/posts\/([^/]+)\/comments$/) : null;
     if (listCommentsMatch) return handleListComments(request, env, listCommentsMatch[1]);

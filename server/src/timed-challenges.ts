@@ -12,7 +12,6 @@ import type { Env } from './env';
 import { error, json, safeJson } from './http';
 import { parseOptionalLocation, type LocationFields } from './location-fields';
 
-const VALID_CATS = ['fitness', 'finance', 'social', 'courage', 'explore', 'mind'];
 const VALID_PROOF: ProofType[] = ['camera', 'screenshot', 'either'];
 const MAX_TOKENS = 2000;
 const MAX_TITLE_LENGTH = 100;
@@ -29,7 +28,6 @@ export interface TimedChallengeRow {
   title: string;
   desc: string;
   tokens: number;
-  cat: string;
   proof_type: string;
   duration_minutes: number;
   place_lat: number | null;
@@ -65,7 +63,6 @@ function toClientShape(row: TimedChallengeRow) {
     title: row.title,
     desc: row.desc,
     tokens: row.tokens,
-    cat: row.cat,
     proofType: row.proof_type,
     deadlineAt: deadlineOf(row),
   };
@@ -77,7 +74,6 @@ function toAdminShape(row: TimedChallengeRow) {
     title: row.title,
     desc: row.desc,
     tokens: row.tokens,
-    cat: row.cat,
     proofType: row.proof_type,
     durationMinutes: row.duration_minutes,
     placeLat: row.place_lat,
@@ -94,7 +90,6 @@ function parseChallengeBody(body: Record<string, unknown>): {
   title: string;
   desc: string;
   tokens: number;
-  cat: string;
   proofType: ProofType;
   durationMinutes: number;
   location: LocationFields | null;
@@ -102,7 +97,6 @@ function parseChallengeBody(body: Record<string, unknown>): {
   const title = String(body.title ?? '').trim().slice(0, MAX_TITLE_LENGTH);
   const desc = String(body.desc ?? '').trim().slice(0, MAX_DESC_LENGTH);
   const tokens = Number(body.tokens);
-  const cat = String(body.cat ?? '');
   const proofType = String(body.proofType ?? '') as ProofType;
   const durationMinutes = Number(body.durationMinutes);
 
@@ -111,7 +105,6 @@ function parseChallengeBody(body: Record<string, unknown>): {
   if (!Number.isInteger(tokens) || tokens <= 0 || tokens > MAX_TOKENS) {
     return error(`Tokens must be a whole number between 1 and ${MAX_TOKENS}`);
   }
-  if (!VALID_CATS.includes(cat)) return error(`Category must be one of: ${VALID_CATS.join(', ')}`);
   if (!VALID_PROOF.includes(proofType)) return error(`Proof type must be one of: ${VALID_PROOF.join(', ')}`);
   if (!Number.isInteger(durationMinutes) || durationMinutes <= 0 || durationMinutes > MAX_DURATION_MINUTES) {
     return error(`Duration must be a whole number of minutes between 1 and ${MAX_DURATION_MINUTES}`);
@@ -120,7 +113,7 @@ function parseChallengeBody(body: Record<string, unknown>): {
   const location = parseOptionalLocation(body);
   if (location instanceof Response) return location;
 
-  return { title, desc, tokens, cat, proofType, durationMinutes, location };
+  return { title, desc, tokens, proofType, durationMinutes, location };
 }
 
 // GET /timed-challenges — every logged-in user. A pure read: no side
@@ -162,15 +155,14 @@ export async function handleAdminCreateTimedChallenge(request: Request, env: Env
   const id = crypto.randomUUID();
   const now = Date.now();
   await env.DB.prepare(
-    `INSERT INTO timed_challenges (id, title, desc, tokens, cat, proof_type, duration_minutes, place_lat, place_lng, radius_meters, active, created_by, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
+    `INSERT INTO timed_challenges (id, title, desc, tokens, proof_type, duration_minutes, place_lat, place_lng, radius_meters, active, created_by, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
   )
     .bind(
       id,
       parsed.title,
       parsed.desc,
       parsed.tokens,
-      parsed.cat,
       parsed.proofType,
       parsed.durationMinutes,
       parsed.location?.placeLat ?? null,
@@ -204,13 +196,12 @@ export async function handleAdminUpdateTimedChallenge(request: Request, env: Env
     const parsed = parseChallengeBody(body);
     if (parsed instanceof Response) return parsed;
     await env.DB.prepare(
-      `UPDATE timed_challenges SET title = ?, desc = ?, tokens = ?, cat = ?, proof_type = ?, duration_minutes = ?, place_lat = ?, place_lng = ?, radius_meters = ?, updated_at = ? WHERE id = ?`
+      `UPDATE timed_challenges SET title = ?, desc = ?, tokens = ?, proof_type = ?, duration_minutes = ?, place_lat = ?, place_lng = ?, radius_meters = ?, updated_at = ? WHERE id = ?`
     )
       .bind(
         parsed.title,
         parsed.desc,
         parsed.tokens,
-        parsed.cat,
         parsed.proofType,
         parsed.durationMinutes,
         parsed.location?.placeLat ?? null,

@@ -13,7 +13,6 @@ import { parseOptionalLocation, type LocationFields } from './location-fields';
 import { buildPrompt } from './verify';
 
 const VALID_CADENCES: Cadence[] = ['daily', 'weekly', 'monthly'];
-const VALID_CATS = ['fitness', 'finance', 'social', 'courage', 'explore', 'mind'];
 const VALID_VERIFY: VerifyType[] = ['photo', 'streak'];
 const VALID_PROOF: ProofType[] = ['camera', 'screenshot', 'either'];
 const MAX_TOKENS = 2000;
@@ -42,7 +41,6 @@ export interface DevChallengeRow {
   desc: string;
   tokens: number;
   cadence: string;
-  cat: string;
   verify_type: string;
   proof_type: string;
   streak_target: number | null;
@@ -72,7 +70,6 @@ function toClientChallenge(row: DevChallengeRow) {
   return {
     id: row.id,
     cadence: row.cadence,
-    cat: row.cat,
     tokens: row.tokens,
     title: row.title,
     desc: row.desc,
@@ -106,7 +103,6 @@ function toAdminShape(row: DevChallengeRow) {
     desc: row.desc,
     tokens: row.tokens,
     cadence: row.cadence,
-    cat: row.cat,
     verify: row.verify_type,
     proofType: row.proof_type,
     streakTarget: row.streak_target,
@@ -132,7 +128,6 @@ function parseChallengeBody(body: Record<string, unknown>): {
   desc: string;
   tokens: number;
   cadence: Cadence;
-  cat: string;
   verify: VerifyType;
   proofType: ProofType;
   streakTarget: number | null;
@@ -149,7 +144,6 @@ function parseChallengeBody(body: Record<string, unknown>): {
   const desc = String(body.desc ?? '').trim().slice(0, MAX_DESC_LENGTH);
   const tokens = Number(body.tokens);
   const cadence = String(body.cadence ?? '') as Cadence;
-  const cat = String(body.cat ?? '');
   const verify = String(body.verify ?? '') as VerifyType;
   const proofType = String(body.proofType ?? '') as ProofType;
   const streakTargetRaw = body.streakTarget;
@@ -160,7 +154,6 @@ function parseChallengeBody(body: Record<string, unknown>): {
     return error(`Tokens must be a whole number between 1 and ${MAX_TOKENS}`);
   }
   if (!VALID_CADENCES.includes(cadence)) return error(`Cadence must be one of: ${VALID_CADENCES.join(', ')}`);
-  if (!VALID_CATS.includes(cat)) return error(`Category must be one of: ${VALID_CATS.join(', ')}`);
   if (!VALID_VERIFY.includes(verify)) return error(`Verify must be one of: ${VALID_VERIFY.join(', ')}`);
   if (!VALID_PROOF.includes(proofType)) return error(`Proof type must be one of: ${VALID_PROOF.join(', ')}`);
 
@@ -217,7 +210,7 @@ function parseChallengeBody(body: Record<string, unknown>): {
     guideChecklist = JSON.stringify(normalized);
   }
 
-  return { title, desc, tokens, cadence, cat, verify, proofType, streakTarget, location, proofAccept, proofReject, verifiabilityNotes, guideChecklist, warnings };
+  return { title, desc, tokens, cadence, verify, proofType, streakTarget, location, proofAccept, proofReject, verifiabilityNotes, guideChecklist, warnings };
 }
 
 // GET /challenges/custom — every logged-in user needs this to see custom
@@ -262,8 +255,8 @@ export async function handleAdminCreateChallenge(request: Request, env: Env): Pr
   const id = crypto.randomUUID();
   const now = Date.now();
   await env.DB.prepare(
-    `INSERT INTO dev_challenges (id, title, desc, tokens, cadence, cat, verify_type, proof_type, streak_target, place_lat, place_lng, radius_meters, proof_accept, proof_reject, verifiability_notes, guide_checklist, active, created_by, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO dev_challenges (id, title, desc, tokens, cadence, verify_type, proof_type, streak_target, place_lat, place_lng, radius_meters, proof_accept, proof_reject, verifiability_notes, guide_checklist, active, created_by, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       id,
@@ -271,7 +264,6 @@ export async function handleAdminCreateChallenge(request: Request, env: Env): Pr
       parsed.desc,
       parsed.tokens,
       parsed.cadence,
-      parsed.cat,
       parsed.verify,
       parsed.proofType,
       parsed.streakTarget,
@@ -317,14 +309,13 @@ export async function handleAdminUpdateChallenge(request: Request, env: Env, id:
     if (parsed instanceof Response) return parsed;
     warnings = parsed.warnings;
     await env.DB.prepare(
-      `UPDATE dev_challenges SET title = ?, desc = ?, tokens = ?, cadence = ?, cat = ?, verify_type = ?, proof_type = ?, streak_target = ?, place_lat = ?, place_lng = ?, radius_meters = ?, proof_accept = ?, proof_reject = ?, verifiability_notes = ?, guide_checklist = ?, updated_at = ? WHERE id = ?`
+      `UPDATE dev_challenges SET title = ?, desc = ?, tokens = ?, cadence = ?, verify_type = ?, proof_type = ?, streak_target = ?, place_lat = ?, place_lng = ?, radius_meters = ?, proof_accept = ?, proof_reject = ?, verifiability_notes = ?, guide_checklist = ?, updated_at = ? WHERE id = ?`
     )
       .bind(
         parsed.title,
         parsed.desc,
         parsed.tokens,
         parsed.cadence,
-        parsed.cat,
         parsed.verify,
         parsed.proofType,
         parsed.streakTarget,

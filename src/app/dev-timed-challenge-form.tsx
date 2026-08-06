@@ -11,7 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackButton } from '@/components/back-button';
 import { LocationPickerMap } from '@/components/location-picker-map';
 import type { LocationPickerValue } from '@/components/location-picker-map.types';
-import { Categories, Colors, Radius, Spacing, type CategoryId } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 import {
   createAdminTimedChallenge,
   setAdminTimedChallengeActive,
@@ -22,7 +22,6 @@ import { useAuthStore } from '@/lib/auth';
 import type { ProofType } from '@/lib/data';
 import { useToastStore } from '@/lib/toast';
 
-const CATS = Object.keys(Categories) as CategoryId[];
 const PROOF_TYPES: ProofType[] = ['camera', 'screenshot', 'either'];
 const DURATION_PRESETS: { label: string; minutes: number }[] = [
   { label: '30m', minutes: 30 },
@@ -54,7 +53,6 @@ export default function DevTimedChallengeFormScreen() {
   const [title, setTitle] = useState(existing?.title ?? '');
   const [desc, setDesc] = useState(existing?.desc ?? '');
   const [tokens, setTokens] = useState(existing ? String(existing.tokens) : '');
-  const [cat, setCat] = useState<CategoryId>((existing?.cat as CategoryId) ?? 'explore');
   const [proofType, setProofType] = useState<ProofType>(existing?.proofType ?? 'camera');
   const [durationMinutes, setDurationMinutes] = useState(existing ? String(existing.durationMinutes) : '120');
   const [location, setLocation] = useState<LocationPickerValue | null>(
@@ -87,7 +85,6 @@ export default function DevTimedChallengeFormScreen() {
       title: title.trim(),
       desc: desc.trim(),
       tokens: tokensNum,
-      cat,
       proofType,
       durationMinutes: durationNum,
       ...(location ? { placeLat: location.lat, placeLng: location.lng, radiusMeters: location.radiusMeters } : {}),
@@ -132,9 +129,6 @@ export default function DevTimedChallengeFormScreen() {
 
         <Text style={styles.label}>Token payout</Text>
         <TextInput style={styles.input} value={tokens} onChangeText={setTokens} placeholder="50" placeholderTextColor={Colors.muted} keyboardType="number-pad" />
-
-        <Text style={styles.label}>Category</Text>
-        <Segmented options={CATS} value={cat} onChange={setCat} labels={Object.fromEntries(CATS.map((c) => [c, Categories[c].label])) as Record<CategoryId, string>} />
 
         <Text style={styles.label}>Proof type</Text>
         <Segmented options={PROOF_TYPES} value={proofType} onChange={setProofType} labels={{ camera: 'Camera', screenshot: 'Screenshot', either: 'Either' }} />

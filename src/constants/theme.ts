@@ -20,17 +20,6 @@ export const Colors = {
   red: '#FF3B30',
 } as const;
 
-export const Categories = {
-  fitness: { label: 'Fitness', emoji: '💪', color: '#12B76A' },
-  finance: { label: 'Finance', emoji: '💰', color: '#FF8A00' },
-  social: { label: 'Social', emoji: '🗣️', color: '#2E6BFF' },
-  courage: { label: 'Courage', emoji: '🦁', color: '#FF3B30' },
-  explore: { label: 'Explore', emoji: '🧭', color: '#7C3AED' },
-  mind: { label: 'Mind', emoji: '🧠', color: '#00A9B5' },
-} as const;
-
-export type CategoryId = keyof typeof Categories;
-
 export const Spacing = {
   half: 2,
   one: 4,

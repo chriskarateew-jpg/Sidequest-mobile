@@ -123,6 +123,34 @@ export async function handleToggleKudos(request: Request, env: Env, postId: stri
   return json({ kudos: count, kudosMine: !existing });
 }
 
+// Deletes one of the caller's own posts. Only removes the post/its
+// reactions/comments and the underlying R2 photo — deliberately leaves the
+// completions row (and its already-credited tokens_earned) untouched, so
+// deleting a post can't be used to re-earn the same challenge in the same
+// period. completions.post_id is write-only elsewhere (never dereferenced
+// to look up a post), so a dangling reference there after this is harmless.
+export async function handleDeletePost(request: Request, env: Env, postId: string): Promise<Response> {
+  const auth = await requireAuth(request, env);
+  if (!auth) return error('Not authenticated', 401);
+
+  const post = await env.DB.prepare('SELECT id, user_id, photo_key FROM posts WHERE id = ?')
+    .bind(postId)
+    .first<{ id: string; user_id: string; photo_key: string | null }>();
+  // Same id for "doesn't exist" and "exists but isn't yours" — no need to
+  // confirm to a caller which is true for someone else's post id.
+  if (!post || post.user_id !== auth.id) return error('Not found', 404);
+
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM post_kudos WHERE post_id = ?').bind(postId),
+    env.DB.prepare('DELETE FROM post_comments WHERE post_id = ?').bind(postId),
+    env.DB.prepare('DELETE FROM posts WHERE id = ?').bind(postId),
+  ]);
+
+  if (post.photo_key) await env.PHOTOS.delete(post.photo_key);
+
+  return json({ ok: true });
+}
+
 export async function handleGetPhoto(env: Env, key: string): Promise<Response> {
   const object = await env.PHOTOS.get(key);
   if (!object) return new Response('Not found', { status: 404, headers: CORS_HEADERS });

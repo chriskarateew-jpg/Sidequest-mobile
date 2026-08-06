@@ -186,16 +186,19 @@ export function LevelIcon({ size = 20, color = '#fff' }: IconProps) {
   );
 }
 
-// Gear mark — links to the Settings screen from Profile.
+// Gear mark, teeth-and-all — links to the Settings screen from Profile. A
+// ring body (r=6) with eight blocky teeth punched out to r=9.5 and a center
+// hole (r=2), all stroke-only to match the rest of this set.
 export function SettingsIcon({ size = 20, color = '#fff' }: IconProps) {
   return (
     <Svg viewBox="0 0 24 24" width={size} height={size} fill="none">
-      <Circle cx="12" cy="12" r="3" stroke={color} strokeWidth={2} />
+      <Circle cx="12" cy="12" r="6" stroke={color} strokeWidth={2} />
+      <Circle cx="12" cy="12" r="2" stroke={color} strokeWidth={2} />
       <Path
-        d="M12 3.5v2.1M12 18.4v2.1M20.5 12h-2.1M5.6 12H3.5M17.66 6.34l-1.49 1.49M7.83 16.17l-1.49 1.49M17.66 17.66l-1.49-1.49M7.83 7.83L6.34 6.34"
+        d="M18.5 12L21.5 12M16.6 16.6L18.7 18.7M12 18.5L12 21.5M7.4 16.6L5.3 18.7M5.5 12L2.5 12M7.4 7.4L5.3 5.3M12 5.5L12 2.5M16.6 7.4L18.7 5.3"
         stroke={color}
-        strokeWidth={2}
-        strokeLinecap="round"
+        strokeWidth={3}
+        strokeLinecap="square"
       />
     </Svg>
   );
@@ -248,6 +251,24 @@ export function BulbIcon({ size = 20, color = '#fff' }: IconProps) {
         strokeLinejoin="round"
       />
       <Path d="M9.5 19h5M10.3 21.5h3.4" stroke={color} strokeWidth={2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+// A trash can — used for deleting one of your own posts (see completed.tsx).
+export function TrashIcon({ size = 20, color = '#fff' }: IconProps) {
+  return (
+    <Svg viewBox="0 0 24 24" width={size} height={size} fill="none">
+      <Path d="M5 7h14" stroke={color} strokeWidth={2} strokeLinecap="round" />
+      <Path d="M9 7V4.8c0-.44.36-.8.8-.8h4.4c.44 0 .8.36.8.8V7" stroke={color} strokeWidth={2} strokeLinejoin="round" />
+      <Path
+        d="M7 7l.7 12.1c.04.7.62 1.25 1.33 1.25h6c.7 0 1.29-.55 1.33-1.25L17 7"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path d="M10 11v6M14 11v6" stroke={color} strokeWidth={2} strokeLinecap="round" />
     </Svg>
   );
 }

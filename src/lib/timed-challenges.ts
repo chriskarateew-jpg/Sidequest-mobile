@@ -10,7 +10,6 @@ export interface TimedChallenge {
   title: string;
   desc: string;
   tokens: number;
-  cat: string;
   proofType: 'camera' | 'screenshot' | 'either';
   deadlineAt: number;
 }

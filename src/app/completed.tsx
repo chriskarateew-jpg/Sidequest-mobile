@@ -1,14 +1,16 @@
 import { Image } from 'expo-image';
-import { useCallback, useEffect, useState } from 'react';
-import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BackButton } from '@/components/back-button';
+import { TrashIcon } from '@/components/rail-icons';
 import { StarRating } from '@/components/star-rating';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { photoUrl } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
-import { fetchMyPosts, type MyPost } from '@/lib/posts';
+import { deleteMyPost, fetchMyPosts, type MyPost } from '@/lib/posts';
+import { useToastStore } from '@/lib/toast';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function formatDate(ts: number) {
@@ -23,6 +25,7 @@ function formatDate(ts: number) {
 export default function CompletedScreen() {
   const insets = useSafeAreaInsets();
   const token = useAuthStore((s) => s.token);
+  const show = useToastStore((s) => s.show);
   const [posts, setPosts] = useState<MyPost[]>([]);
   const [loadError, setLoadError] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -44,6 +47,17 @@ export default function CompletedScreen() {
     load();
   }, [load]);
 
+  const handleDelete = async (post: MyPost) => {
+    if (!token) return;
+    const previous = posts;
+    setPosts((prev) => prev.filter((p) => p.id !== post.id));
+    const ok = await deleteMyPost(token, post.id);
+    if (!ok) {
+      setPosts(previous);
+      show("Couldn't delete that post. Try again.");
+    }
+  };
+
   return (
     <View style={styles.screen}>
       <FlatList
@@ -59,7 +73,7 @@ export default function CompletedScreen() {
         }
         renderItem={({ item }) => (
           <View style={styles.cardWrap}>
-            <CompletedPostCard post={item} />
+            <CompletedPostCard post={item} onDelete={() => handleDelete(item)} />
           </View>
         )}
         ListEmptyComponent={
@@ -76,7 +90,26 @@ export default function CompletedScreen() {
   );
 }
 
-function CompletedPostCard({ post }: { post: MyPost }) {
+// Tap-to-confirm rather than a native Alert: this app never uses
+// Alert.alert anywhere (its web build via react-native-web has spotty
+// support for it), so a two-tap inline confirm matches the rest of the
+// app's pattern and works identically on native and web.
+const DELETE_CONFIRM_TIMEOUT_MS = 4000;
+
+function CompletedPostCard({ post, onDelete }: { post: MyPost; onDelete: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handlePressTrash = () => {
+    if (confirming) {
+      if (resetTimer.current) clearTimeout(resetTimer.current);
+      onDelete();
+      return;
+    }
+    setConfirming(true);
+    resetTimer.current = setTimeout(() => setConfirming(false), DELETE_CONFIRM_TIMEOUT_MS);
+  };
+
   return (
     <View style={styles.card}>
       {post.photoKey && <Image source={{ uri: photoUrl(post.photoKey) }} style={styles.photo} contentFit="cover" />}
@@ -92,7 +125,12 @@ function CompletedPostCard({ post }: { post: MyPost }) {
         {!!post.questDesc && <Text style={styles.questDesc}>{post.questDesc}</Text>}
         {!!post.rating && <StarRating value={post.rating} size={15} />}
         {!!post.caption && <Text style={styles.caption}>"{post.caption}"</Text>}
-        <Text style={styles.date}>✓ {formatDate(post.createdAt)}</Text>
+        <View style={styles.footerRow}>
+          <Text style={styles.date}>✓ {formatDate(post.createdAt)}</Text>
+          <Pressable hitSlop={8} style={[styles.deleteBtn, confirming && styles.deleteBtnConfirming]} onPress={handlePressTrash}>
+            {confirming ? <Text style={styles.deleteConfirmText}>Tap to confirm</Text> : <TrashIcon size={16} color={Colors.muted} />}
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -116,8 +154,12 @@ const styles = StyleSheet.create({
   titleFlex: { flex: 1 },
   questDesc: { fontSize: 13, color: Colors.muted, lineHeight: 18 },
   caption: { fontSize: 13.5, color: Colors.ink, fontStyle: 'italic', lineHeight: 18 },
-  date: { fontSize: 12, color: Colors.muted, fontWeight: '700', marginTop: 2 },
+  date: { fontSize: 12, color: Colors.muted, fontWeight: '700' },
   rewardPill: { backgroundColor: Colors.goldSoft, borderRadius: Radius.pill, paddingHorizontal: 12, paddingVertical: 6 },
   rewardText: { fontWeight: '800', color: Colors.goldText, fontSize: 13 },
   empty: { textAlign: 'center', color: Colors.muted, paddingVertical: 40 },
+  footerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 },
+  deleteBtn: { padding: 4, borderRadius: Radius.sm },
+  deleteBtnConfirming: { backgroundColor: Colors.red + '1A' },
+  deleteConfirmText: { color: Colors.red, fontWeight: '800', fontSize: 11.5 },
 });

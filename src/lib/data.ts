@@ -1,8 +1,6 @@
 // Gumpa — challenge & shop catalog.
 // Ported from the web app's js/data.js (kept in sync intentionally).
 
-import type { CategoryId } from '@/constants/theme';
-
 export type Cadence = 'daily' | 'weekly' | 'monthly';
 
 // How a challenge's completion gets proven — every challenge is photo-verified
@@ -31,7 +29,6 @@ export type ProofType = 'camera' | 'screenshot' | 'either';
 export interface Challenge {
   id: string;
   cadence: Cadence;
-  cat: CategoryId;
   tokens: number;
   title: string;
   desc: string;

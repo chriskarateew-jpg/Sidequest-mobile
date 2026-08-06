@@ -3,7 +3,6 @@ import { useState } from 'react';
 import { createChallenge, previewPrompt, setChallengeActive, updateChallenge } from '../api';
 import {
   CADENCES,
-  CATEGORIES,
   GUIDE_CHECKLIST_ITEMS,
   PROOF_TYPES,
   VERIFY_TYPES,
@@ -38,7 +37,6 @@ export function TaskForm({
   const [desc, setDesc] = useState(existing?.desc ?? '');
   const [tokens, setTokens] = useState(existing ? String(existing.tokens) : '');
   const [cadence, setCadence] = useState<Cadence>(existing?.cadence ?? 'daily');
-  const [cat, setCat] = useState<string>(existing?.cat ?? CATEGORIES[0]);
   const [verify, setVerify] = useState<VerifyType>(existing?.verify ?? 'photo');
   const [proofType, setProofType] = useState<ProofType>(existing?.proofType ?? 'camera');
   const [streakTarget, setStreakTarget] = useState(existing?.streakTarget ? String(existing.streakTarget) : '');
@@ -80,7 +78,6 @@ export function TaskForm({
       desc: desc.trim(),
       tokens: tokensNum,
       cadence,
-      cat,
       verify,
       proofType,
       ...(streakTargetNum ? { streakTarget: streakTargetNum } : {}),
@@ -156,16 +153,6 @@ export function TaskForm({
             <label>Cadence</label>
             <select value={cadence} onChange={(e) => setCadence(e.target.value as Cadence)}>
               {CADENCES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label>Category</label>
-            <select value={cat} onChange={(e) => setCat(e.target.value)}>
-              {CATEGORIES.map((c) => (
                 <option key={c} value={c}>
                   {c}
                 </option>

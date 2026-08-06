@@ -9,7 +9,6 @@ export type VerifyType = 'photo' | 'streak';
 export type ProofType = 'camera' | 'screenshot' | 'either';
 
 export const CADENCES: Cadence[] = ['daily', 'weekly', 'monthly'];
-export const CATEGORIES = ['fitness', 'finance', 'social', 'courage', 'explore', 'mind'] as const;
 export const VERIFY_TYPES: VerifyType[] = ['photo', 'streak'];
 export const PROOF_TYPES: ProofType[] = ['camera', 'screenshot', 'either'];
 
@@ -31,7 +30,6 @@ export interface AdminChallenge {
   desc: string;
   tokens: number;
   cadence: Cadence;
-  cat: string;
   verify: VerifyType;
   proofType: ProofType;
   streakTarget: number | null;
@@ -52,7 +50,6 @@ export interface AdminChallengeInput {
   desc: string;
   tokens: number;
   cadence: Cadence;
-  cat: string;
   verify: VerifyType;
   proofType: ProofType;
   streakTarget?: number;

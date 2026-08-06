@@ -48,7 +48,6 @@ export interface LocalChallengeRow {
   description: string;
   cadence: string;
   verify_type: string;
-  cat: string;
   tokens: number;
   created_at: number;
 }
@@ -65,7 +64,7 @@ function bucketRegionKey(lat: number, lng: number): string {
 function toClientChallenge(row: LocalChallengeRow) {
   // Always 'camera' — a local challenge is a real-venue visit by
   // construction, never a screenshot task (see ProofType in tokens.ts).
-  return { id: row.id, cadence: row.cadence, cat: row.cat, tokens: row.tokens, title: row.title, desc: row.description, verify: row.verify_type, proofType: 'camera' as const };
+  return { id: row.id, cadence: row.cadence, tokens: row.tokens, title: row.title, desc: row.description, verify: row.verify_type, proofType: 'camera' as const };
 }
 
 async function loadBatch(env: Env, regionKey: string, freshOnly: boolean): Promise<LocalChallengeRow[] | null> {
@@ -164,7 +163,7 @@ function templatedCopy(venue: NearbyPlace): { title: string; desc: string } {
 }
 
 // One Claude call per batch (not per venue) — and Claude's job is copy only.
-// Cadence/verify/cat/tokens are always assigned by us below, never by the
+// Cadence/verify/tokens are always assigned by us below, never by the
 // model, so a bad generation can't produce structurally weird challenges.
 // Always returns exactly venues.length entries: Claude's copy is layered
 // over a fully-templated fallback per venue, so a bad/missing model
@@ -252,7 +251,6 @@ async function generateBatch(env: Env, regionKey: string, lat: number, lng: numb
       description: copy[i].desc,
       cadence: profile.cadence,
       verify_type: 'photo',
-      cat: 'explore',
       tokens: profile.tokens,
       created_at: createdAt,
     };
@@ -261,9 +259,9 @@ async function generateBatch(env: Env, regionKey: string, lat: number, lng: numb
   await env.DB.batch(
     rows.map((r) =>
       env.DB.prepare(
-        `INSERT INTO local_challenges (id, region_key, place_name, place_category, place_lat, place_lng, title, description, cadence, verify_type, cat, tokens, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).bind(r.id, r.region_key, r.place_name, r.place_category, r.place_lat, r.place_lng, r.title, r.description, r.cadence, r.verify_type, r.cat, r.tokens, r.created_at)
+        `INSERT INTO local_challenges (id, region_key, place_name, place_category, place_lat, place_lng, title, description, cadence, verify_type, tokens, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(r.id, r.region_key, r.place_name, r.place_category, r.place_lat, r.place_lng, r.title, r.description, r.cadence, r.verify_type, r.tokens, r.created_at)
     )
   );
 

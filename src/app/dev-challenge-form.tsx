@@ -11,7 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackButton } from '@/components/back-button';
 import { LocationPickerMap } from '@/components/location-picker-map';
 import type { LocationPickerValue } from '@/components/location-picker-map.types';
-import { Categories, Colors, Radius, Spacing, type CategoryId } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 import {
   createAdminChallenge,
   GUIDE_CHECKLIST_ITEMS,
@@ -25,7 +25,6 @@ import { useAuthStore } from '@/lib/auth';
 import { useToastStore } from '@/lib/toast';
 
 const CADENCES: Cadence[] = ['daily', 'weekly', 'monthly'];
-const CATS = Object.keys(Categories) as CategoryId[];
 const VERIFY_METHODS: VerifyMethod[] = ['photo', 'streak'];
 const PROOF_TYPES: ProofType[] = ['camera', 'screenshot', 'either'];
 
@@ -60,7 +59,6 @@ export default function DevChallengeFormScreen() {
   const [desc, setDesc] = useState(existing?.desc ?? '');
   const [tokens, setTokens] = useState(existing ? String(existing.tokens) : '');
   const [cadence, setCadence] = useState<Cadence>(existing?.cadence ?? 'daily');
-  const [cat, setCat] = useState<CategoryId>((existing?.cat as CategoryId) ?? 'fitness');
   const [verify, setVerify] = useState<VerifyMethod>(existing?.verify ?? 'photo');
   const [proofType, setProofType] = useState<ProofType>(existing?.proofType ?? 'camera');
   const [streakTarget, setStreakTarget] = useState(existing?.streakTarget ? String(existing.streakTarget) : '');
@@ -99,7 +97,6 @@ export default function DevChallengeFormScreen() {
       desc: desc.trim(),
       tokens: tokensNum,
       cadence,
-      cat,
       verify,
       proofType,
       streakTarget: streakTargetNum,
@@ -152,9 +149,6 @@ export default function DevChallengeFormScreen() {
 
         <Text style={styles.label}>Cadence</Text>
         <Segmented options={CADENCES} value={cadence} onChange={setCadence} />
-
-        <Text style={styles.label}>Category</Text>
-        <Segmented options={CATS} value={cat} onChange={setCat} labels={Object.fromEntries(CATS.map((c) => [c, Categories[c].label])) as Record<CategoryId, string>} />
 
         <Text style={styles.label}>Verify method</Text>
         <Segmented options={VERIFY_METHODS} value={verify} onChange={setVerify} labels={{ photo: 'Single photo', streak: 'Streak' }} />

@@ -30,7 +30,6 @@ export interface AdminChallenge {
   desc: string;
   tokens: number;
   cadence: Cadence;
-  cat: string;
   verify: VerifyMethod;
   proofType: ProofType;
   streakTarget: number | null;
@@ -51,7 +50,6 @@ export interface AdminChallengeInput {
   desc: string;
   tokens: number;
   cadence: Cadence;
-  cat: string;
   verify: VerifyMethod;
   proofType: ProofType;
   streakTarget?: number;
@@ -83,7 +81,6 @@ export interface AdminTimedChallenge {
   title: string;
   desc: string;
   tokens: number;
-  cat: string;
   proofType: ProofType;
   durationMinutes: number;
   placeLat: number | null;
@@ -99,7 +96,6 @@ export interface AdminTimedChallengeInput {
   title: string;
   desc: string;
   tokens: number;
-  cat: string;
   proofType: ProofType;
   durationMinutes: number;
   placeLat?: number;

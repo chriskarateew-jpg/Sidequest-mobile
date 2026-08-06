@@ -33,3 +33,15 @@ export async function fetchMyPosts(token: string): Promise<MyPostsResult> {
     return { status: 'error' };
   }
 }
+
+// Deletes one of the caller's own posts (server enforces ownership — see
+// server/src/feed.ts's handleDeletePost). Doesn't touch tokens already
+// earned; only removes the post/photo/reactions.
+export async function deleteMyPost(token: string, postId: string): Promise<boolean> {
+  try {
+    const res = await apiFetch(`/posts/${postId}`, { method: 'DELETE', token });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}

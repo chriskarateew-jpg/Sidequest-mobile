@@ -173,7 +173,7 @@ export default function DevScreen() {
                   {challenge.title}
                 </Text>
                 <Text style={styles.rowDesc}>
-                  +{challenge.tokens} · {challenge.cadence} · {challenge.cat}
+                  +{challenge.tokens} · {challenge.cadence}
                   {challenge.verify === 'streak' ? ` · streak/${challenge.streakTarget}` : ''}
                 </Text>
               </Pressable>
@@ -213,7 +213,7 @@ export default function DevScreen() {
                     {challenge.title}
                   </Text>
                   <Text style={styles.rowDesc}>
-                    +{challenge.tokens} · {challenge.cat} · {challenge.durationMinutes}m window
+                    +{challenge.tokens} · {challenge.durationMinutes}m window
                   </Text>
                 </Pressable>
                 <View style={styles.rowActions}>
