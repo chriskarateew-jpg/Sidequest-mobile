@@ -13,6 +13,17 @@
 import { apiFetch } from '@/lib/api';
 import type { Cadence, ProofType, VerifyMethod } from '@/lib/data';
 
+// Matches server/src/dev-challenges.ts's GUIDE_CHECKLIST_KEYS exactly.
+export const GUIDE_CHECKLIST_ITEMS = [
+  { key: 'routineBreaking', label: 'Routine-breaking — a new place, object, activity, or rerouted habit' },
+  { key: 'named', label: 'Named the specific thing (not a category, not a menu of options)' },
+  { key: 'photoProvable', label: 'Photo-provable in one shot — could someone fake it without doing the task?' },
+  { key: 'cadenceAppropriate', label: 'Scope matches its cadence (zero-planning / short trip / real multi-step goal)' },
+  { key: 'noRedFlagVerbs', label: 'No red-flag verb standing in for a missing specific' },
+] as const;
+export type GuideChecklistKey = (typeof GUIDE_CHECKLIST_ITEMS)[number]['key'];
+export type GuideChecklist = Record<GuideChecklistKey, boolean>;
+
 export interface AdminChallenge {
   id: string;
   title: string;
@@ -26,6 +37,10 @@ export interface AdminChallenge {
   placeLat: number | null;
   placeLng: number | null;
   radiusMeters: number | null;
+  proofAccept: string | null;
+  proofReject: string | null;
+  verifiabilityNotes: string | null;
+  guideChecklist: GuideChecklist | null;
   active: boolean;
   createdAt: number;
   updatedAt: number;
@@ -43,6 +58,13 @@ export interface AdminChallengeInput {
   placeLat?: number;
   placeLng?: number;
   radiusMeters?: number;
+  proofAccept?: string;
+  proofReject?: string;
+  verifiabilityNotes?: string;
+  guideChecklist?: GuideChecklist;
+  // Create only — server defaults true when omitted. Update never sends
+  // this; active is toggled separately via setAdminChallengeActive.
+  active?: boolean;
 }
 
 export interface AdminBoost {

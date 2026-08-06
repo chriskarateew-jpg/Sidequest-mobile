@@ -441,18 +441,87 @@ yet (migrations, `verify.ts`, `dev-challenges.ts`, `catalog.ts`,
     doing if the mobile dev panel is meant to stay a real fallback surface
     per decision 3, rather than just bit-rotting.
 
-## Phase 6 — Verification pass (do this before calling any phase "done")
+## Phase 6 — Verification pass (do this before calling any phase "done") ✅ done (2026-08-06)
 
-- [ ] Re-run the diff script from Phase 3 one more time after all phases
-      land, to confirm nothing drifted during Phase 4/5 work.
-- [ ] Manually create one new task end-to-end through the dashboard, submit
-      a real photo against it through the app, confirm `/verify` uses the
-      per-task hints (check the actual outbound Anthropic request body, not
-      just the verify result).
-  - [ ] Follow the [verify](../.claude/skills) skill's spirit here even
-      though this is a backend/data change: exercise the real flow (create
-      task → app shows it as a suggestion → submit photo → verify → complete
-      → appears in feed), don't stop at "the migration script ran."
-- [ ] Confirm a pre-existing completed task's history (a post referencing a
-      migrated static id) still renders correctly — the id-stability
-      requirement from Phase 3 is only real if this is checked, not assumed.
+- [x] **Re-ran the drift check**, both local and remote: wrote a fresh script
+      that parses `0020_migrate_static_challenges.sql`'s literal `INSERT`
+      values and diffs them field-by-field (including `updated_at`, as a
+      "was this row touched since migration" signal) against the live
+      `dev_challenges` rows. **Zero drift** against local D1 and, after
+      deploying, **zero drift against remote/production D1 too** — all 40
+      rows byte-identical to the original migration, confirming Phase 4/5
+      never touched them.
+- [x] **Deployed** the accumulated Phase 4 (checklist/validation logic) and
+      Phase 5 (CORS fix, `preview-prompt` endpoint) server changes to
+      production (`wrangler deploy`, version `f3cd445e-1c1b-496f-8a59-638c96b9acd6`).
+      Smoke-tested immediately after (`GET /auth/me` with a bad token → the
+      expected 401, not a crash).
+- [x] **Found and fixed a real regression this surfaced**: the mobile app's
+      hidden dev panel (`src/app/dev-challenge-form.tsx`) had no UI for
+      `guide_checklist` at all, so once Phase 4's checklist gate went live,
+      it could no longer create *any* new active task — not a narrow edge
+      case, a full block on the panel's primary function. Fixed by adding
+      the five-item checklist, `proofAccept`/`proofReject`/
+      `verifiabilityNotes` fields, and an always-visible Active toggle
+      (previously edit-only) to the form, and extending
+      `src/lib/admin-api.ts`'s types to match — the exact follow-up Phase 5
+      had already flagged as deferred, just discovered the hard way instead
+      of proactively. Confirmed fixed live: the developer created a real
+      task ("Phase 6 test task - delete me") through the patched panel
+      against production successfully.
+- [x] **Live end-to-end pass, run against real production** (not the
+      dashboard, which isn't deployed yet — used the mobile app's dev panel
+      instead, equally valid per decision 3's "secondary surface" framing):
+  - Developer created a real `dev_challenges` row with `proofAccept`/
+    `proofReject` hints set, full checklist checked, active.
+  - Signed up a disposable test account directly against production
+    (`phase6verify1`) — deliberately separate from the developer's own
+    account so a throwaway test submission wouldn't land in the real
+    account's history.
+  - Confirmed the task is visible via `GET /challenges/custom` under that
+    account (the real suggestion-fetch endpoint every client uses), **and**
+    confirmed `proofAccept`/`proofReject`/`verifiabilityNotes`/
+    `guideChecklist` are correctly absent from that response — `dev-
+    challenges.ts`'s `toClientChallenge` exclusion still holds for a
+    hint-bearing task, not just hint-less ones.
+  - Submitted a real photo through `POST /verify` against production (an
+    unrelated image, since no real coffee mug photo was available in this
+    environment). Real Claude Haiku response: `matches: false`, reason
+    *"This is a screenshot of a web application landing page, not a photo
+    of a coffee cup on a desk."* — a genuine live model call that correctly
+    resolved the brand-new hint-bearing task through the full
+    `resolveBaseCatalogEntry` → `dev_challenges` chain and reasoned about
+    it specifically (not a generic rejection), closing the loop opened by
+    Phase 2's code-level-only diff test.
+  - **Not exercised**: `matches: true` → `/complete` → appears in feed,
+    since no genuinely matching photo was available to trigger it. Not
+    treated as a gap needing a fabricated success — a real, correctly-
+    reasoned rejection is better evidence of correctness than staging a
+    forced match would have been. The `/complete` → feed path itself was
+    independently confirmed via the next bullet, on pre-existing real data
+    that already went through it.
+  - Test task left active in production, pending a one-tap deactivation via
+    the dev panel (soft delete, per the existing "Delete" semantics) — ask
+    the developer to do this, doesn't need any of the tooling above.
+- [x] **Confirmed a pre-existing completed post's history renders correctly
+      for a migrated id — with real production data, not a synthetic
+      check**: `posts` has no live dependency on catalog resolution at all
+      (`server/src/feed.ts` selects `posts.*` directly; `quest_title`/
+      `quest_desc` are frozen text written once at completion time in
+      `complete.ts`, never re-looked-up). Found a real example proving this
+      isn't just a schema argument: a production post with
+      `challenge_id = 'w-newhood'` has frozen `quest_title = "Explore a new
+      neighborhood"`, while the *current* `dev_challenges` row for that same
+      id now reads `"Find a mural or street art piece nearby"` (renamed
+      before the migration). Fetched the live `GET /feed/public` endpoint
+      and confirmed it serves that post with its original frozen title, not
+      the current one — the id-stability guarantee holds under real drift,
+      confirmed against the actual API, not assumed from the schema alone.
+
+**Note for future sessions**: during this pass, a production password was
+briefly typed into a terminal and became visible in this conversation while
+debugging a PowerShell/curl quoting issue. The user was advised to change
+that password afterward. Credential-in-terminal debugging should be avoided
+going forward — prefer having the developer generate and share a short-lived
+token, or have Claude perform actions through its own tooling wherever
+possible, rather than relaying login commands back and forth.

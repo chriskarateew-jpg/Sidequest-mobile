@@ -12,7 +12,14 @@ import { BackButton } from '@/components/back-button';
 import { LocationPickerMap } from '@/components/location-picker-map';
 import type { LocationPickerValue } from '@/components/location-picker-map.types';
 import { Categories, Colors, Radius, Spacing, type CategoryId } from '@/constants/theme';
-import { createAdminChallenge, setAdminChallengeActive, updateAdminChallenge, type AdminChallenge } from '@/lib/admin-api';
+import {
+  createAdminChallenge,
+  GUIDE_CHECKLIST_ITEMS,
+  setAdminChallengeActive,
+  updateAdminChallenge,
+  type AdminChallenge,
+  type GuideChecklist,
+} from '@/lib/admin-api';
 import type { Cadence, ProofType, VerifyMethod } from '@/lib/data';
 import { useAuthStore } from '@/lib/auth';
 import { useToastStore } from '@/lib/toast';
@@ -21,6 +28,14 @@ const CADENCES: Cadence[] = ['daily', 'weekly', 'monthly'];
 const CATS = Object.keys(Categories) as CategoryId[];
 const VERIFY_METHODS: VerifyMethod[] = ['photo', 'streak'];
 const PROOF_TYPES: ProofType[] = ['camera', 'screenshot', 'either'];
+
+const EMPTY_CHECKLIST: GuideChecklist = {
+  routineBreaking: false,
+  named: false,
+  photoProvable: false,
+  cadenceAppropriate: false,
+  noRedFlagVerbs: false,
+};
 
 function Segmented<T extends string>({ options, value, onChange, labels }: { options: T[]; value: T; onChange: (v: T) => void; labels?: Partial<Record<T, string>> }) {
   return (
@@ -54,6 +69,10 @@ export default function DevChallengeFormScreen() {
       ? { lat: existing.placeLat, lng: existing.placeLng, radiusMeters: existing.radiusMeters }
       : null
   );
+  const [proofAccept, setProofAccept] = useState(existing?.proofAccept ?? '');
+  const [proofReject, setProofReject] = useState(existing?.proofReject ?? '');
+  const [verifiabilityNotes, setVerifiabilityNotes] = useState(existing?.verifiabilityNotes ?? '');
+  const [checklist, setChecklist] = useState<GuideChecklist>(existing?.guideChecklist ?? EMPTY_CHECKLIST);
   const [active, setActive] = useState(existing?.active ?? true);
   const [saving, setSaving] = useState(false);
 
@@ -85,15 +104,24 @@ export default function DevChallengeFormScreen() {
       proofType,
       streakTarget: streakTargetNum,
       ...(location ? { placeLat: location.lat, placeLng: location.lng, radiusMeters: location.radiusMeters } : {}),
+      ...(proofAccept.trim() ? { proofAccept: proofAccept.trim() } : {}),
+      ...(proofReject.trim() ? { proofReject: proofReject.trim() } : {}),
+      ...(verifiabilityNotes.trim() ? { verifiabilityNotes: verifiabilityNotes.trim() } : {}),
+      guideChecklist: checklist,
     };
-    const result = existing ? await updateAdminChallenge(token, existing.id, input) : await createAdminChallenge(token, input);
+    const result = existing ? await updateAdminChallenge(token, existing.id, input) : await createAdminChallenge(token, { ...input, active });
     if (!result.ok) {
       setSaving(false);
       show(result.message);
       return;
     }
     if (existing && existing.active !== active) {
-      await setAdminChallengeActive(token, existing.id, active);
+      const activeResult = await setAdminChallengeActive(token, existing.id, active);
+      if (!activeResult.ok) {
+        setSaving(false);
+        show(activeResult.message);
+        return;
+      }
     }
     setSaving(false);
     router.back();
@@ -141,12 +169,10 @@ export default function DevChallengeFormScreen() {
         <Text style={styles.label}>Proof type</Text>
         <Segmented options={PROOF_TYPES} value={proofType} onChange={setProofType} labels={{ camera: 'Camera', screenshot: 'Screenshot', either: 'Either' }} />
 
-        {existing && (
-          <View style={styles.activeRow}>
-            <Text style={styles.label}>Active (shows in rotation)</Text>
-            <Switch value={active} onValueChange={setActive} trackColor={{ true: Colors.accent, false: Colors.line }} />
-          </View>
-        )}
+        <View style={styles.activeRow}>
+          <Text style={styles.label}>Active (shows in rotation)</Text>
+          <Switch value={active} onValueChange={setActive} trackColor={{ true: Colors.accent, false: Colors.line }} />
+        </View>
       </View>
 
       <Text style={styles.sectionHeader}>Location (optional)</Text>
@@ -155,6 +181,60 @@ export default function DevChallengeFormScreen() {
       </Text>
       <View style={styles.card}>
         <LocationPickerMap value={location} onChange={setLocation} />
+      </View>
+
+      <Text style={styles.sectionHeader}>Verification hints (optional)</Text>
+      <Text style={styles.sectionSubtitle}>Short phrases merged into the /verify prompt Claude sees for this specific task.</Text>
+      <View style={styles.card}>
+        <Text style={styles.label}>Proof accept</Text>
+        <TextInput
+          style={styles.input}
+          value={proofAccept}
+          onChangeText={setProofAccept}
+          placeholder="a visible street sign or landmark in frame"
+          placeholderTextColor={Colors.muted}
+          maxLength={200}
+        />
+        <Text style={styles.label}>Proof reject</Text>
+        <TextInput
+          style={styles.input}
+          value={proofReject}
+          onChangeText={setProofReject}
+          placeholder="reject if no gym equipment visible"
+          placeholderTextColor={Colors.muted}
+          maxLength={200}
+        />
+      </View>
+
+      <Text style={styles.sectionHeader}>Guide checklist</Text>
+      <Text style={styles.sectionSubtitle}>
+        All five must be checked before this task can be active — see docs/challenge-writing-guide.md. Turn "Active" off above to save
+        a draft with boxes unchecked.
+      </Text>
+      <View style={styles.card}>
+        {GUIDE_CHECKLIST_ITEMS.map((item) => (
+          <Pressable
+            key={item.key}
+            style={styles.checklistRow}
+            onPress={() => setChecklist((prev) => ({ ...prev, [item.key]: !prev[item.key] }))}>
+            <Switch
+              value={checklist[item.key]}
+              onValueChange={(v) => setChecklist((prev) => ({ ...prev, [item.key]: v }))}
+              trackColor={{ true: Colors.accent, false: Colors.line }}
+            />
+            <Text style={styles.checklistLabel}>{item.label}</Text>
+          </Pressable>
+        ))}
+        <Text style={[styles.label, { marginTop: 10 }]}>Verifiability notes (audit trail only, never shown to Claude or users)</Text>
+        <TextInput
+          style={[styles.input, styles.inputMultiline]}
+          value={verifiabilityNotes}
+          onChangeText={setVerifiabilityNotes}
+          placeholderTextColor={Colors.muted}
+          multiline
+          textAlignVertical="top"
+          maxLength={500}
+        />
       </View>
 
       <Pressable style={[styles.saveBtn, saving && styles.saveBtnDisabled]} onPress={handleSave} disabled={saving}>
@@ -188,6 +268,8 @@ const styles = StyleSheet.create({
   segmentText: { fontSize: 12.5, fontWeight: '700', color: Colors.muted },
   segmentTextActive: { color: Colors.accent },
   activeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 },
+  checklistRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
+  checklistLabel: { flex: 1, fontSize: 13, color: Colors.ink, lineHeight: 18 },
   saveBtn: { backgroundColor: Colors.accent, borderRadius: Radius.sm, paddingVertical: 14, alignItems: 'center' },
   saveBtnDisabled: { opacity: 0.6 },
   saveBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
