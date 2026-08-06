@@ -8,12 +8,14 @@ export function TaskList({
   onNew,
   onToggleActive,
   onDelete,
+  onPermanentDelete,
 }: {
   challenges: AdminChallenge[];
   onSelect: (challenge: AdminChallenge) => void;
   onNew: () => void;
   onToggleActive: (challenge: AdminChallenge, active: boolean) => void;
   onDelete: (challenge: AdminChallenge) => void;
+  onPermanentDelete: (challenge: AdminChallenge) => void;
 }) {
   const [cadenceFilter, setCadenceFilter] = useState<Cadence | 'all'>('all');
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all');
@@ -71,6 +73,11 @@ export function TaskList({
               {c.active && (
                 <button className="danger" onClick={() => onDelete(c)}>
                   Delete
+                </button>
+              )}
+              {!c.active && (
+                <button className="danger" onClick={() => onPermanentDelete(c)}>
+                  Delete permanently
                 </button>
               )}
             </div>

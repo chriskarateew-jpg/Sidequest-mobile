@@ -25,6 +25,7 @@ import {
   handleAdminCreateChallenge,
   handleAdminDeleteChallenge,
   handleAdminListChallenges,
+  handleAdminPermanentlyDeleteChallenge,
   handleAdminPreviewPrompt,
   handleAdminUpdateChallenge,
   handleListCustomChallenges,
@@ -118,6 +119,8 @@ export default {
     if (updateChallengeMatch) return handleAdminUpdateChallenge(request, env, updateChallengeMatch[1]);
     const deleteChallengeMatch = method === 'DELETE' ? pathname.match(/^\/admin\/challenges\/([^/]+)$/) : null;
     if (deleteChallengeMatch) return handleAdminDeleteChallenge(request, env, deleteChallengeMatch[1]);
+    const permanentDeleteMatch = method === 'DELETE' ? pathname.match(/^\/admin\/challenges\/([^/]+)\/permanent$/) : null;
+    if (permanentDeleteMatch) return handleAdminPermanentlyDeleteChallenge(request, env, permanentDeleteMatch[1]);
     const previewPromptMatch = method === 'GET' ? pathname.match(/^\/admin\/challenges\/([^/]+)\/preview-prompt$/) : null;
     if (previewPromptMatch) return handleAdminPreviewPrompt(request, env, previewPromptMatch[1]);
 

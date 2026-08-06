@@ -134,6 +134,12 @@ export function deleteAdminChallenge(token: string, id: string) {
   return callAdmin<{ ok: true }>(`/admin/challenges/${id}`, token, { method: 'DELETE' });
 }
 
+// Only succeeds once the task is already deactivated — see
+// server/src/dev-challenges.ts's handleAdminPermanentlyDeleteChallenge.
+export function permanentlyDeleteAdminChallenge(token: string, id: string) {
+  return callAdmin<{ ok: true }>(`/admin/challenges/${id}/permanent`, token, { method: 'DELETE' });
+}
+
 export function fetchAdminBoosts(token: string) {
   return callAdmin<{ boosts: AdminBoost[] }>('/admin/boosts', token);
 }

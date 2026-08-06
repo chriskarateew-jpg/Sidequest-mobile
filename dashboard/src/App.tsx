@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { clearStoredToken, deleteChallenge, fetchChallenges, getStoredToken, setChallengeActive, storeToken } from './api';
+import {
+  clearStoredToken,
+  deleteChallenge,
+  fetchChallenges,
+  getStoredToken,
+  permanentlyDeleteChallenge,
+  setChallengeActive,
+  storeToken,
+} from './api';
 import { Login } from './pages/Login';
 import { TaskForm } from './pages/TaskForm';
 import { TaskList } from './pages/TaskList';
@@ -66,6 +74,17 @@ export function App() {
     setChallenges((prev) => prev?.map((c) => (c.id === challenge.id ? { ...c, active: false } : c)) ?? null);
   };
 
+  const handlePermanentDelete = async (challenge: AdminChallenge) => {
+    if (!token) return;
+    if (!window.confirm(`Permanently delete "${challenge.title}"? This removes the row entirely and cannot be undone.`)) return;
+    const result = await permanentlyDeleteChallenge(token, challenge.id);
+    if (!result.ok) {
+      window.alert(result.message);
+      return;
+    }
+    setChallenges((prev) => prev?.filter((c) => c.id !== challenge.id) ?? null);
+  };
+
   const handleSaved = () => {
     setView({ name: 'list' });
     if (token) load(token);
@@ -108,6 +127,7 @@ export function App() {
           onNew={() => setView({ name: 'new' })}
           onToggleActive={handleToggleActive}
           onDelete={handleDelete}
+          onPermanentDelete={handlePermanentDelete}
         />
       ) : (
         <TaskForm

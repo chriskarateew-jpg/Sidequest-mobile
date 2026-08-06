@@ -20,6 +20,7 @@ import {
   fetchAdminBoosts,
   fetchAdminChallenges,
   fetchAdminTimedChallenges,
+  permanentlyDeleteAdminChallenge,
   setAdminChallengeActive,
   setAdminTimedChallengeActive,
   type AdminBoost,
@@ -60,6 +61,11 @@ export default function DevScreen() {
   const [challenges, setChallenges] = useState<AdminChallenge[]>([]);
   const [boosts, setBoosts] = useState<AdminBoost[]>([]);
   const [timedChallenges, setTimedChallenges] = useState<AdminTimedChallenge[]>([]);
+  // Which inactive task's "Delete permanently" is mid tap-to-confirm — this
+  // app never uses Alert.alert (spotty support on the web build), so a
+  // second tap within a few seconds stands in for a confirm dialog, same
+  // pattern as completed.tsx's post delete.
+  const [confirmingPermanentId, setConfirmingPermanentId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!token) {
@@ -115,6 +121,21 @@ export default function DevScreen() {
       return;
     }
     setChallenges((prev) => prev.map((c) => (c.id === challenge.id ? { ...c, active: false } : c)));
+  };
+
+  const handlePermanentDelete = async (challenge: AdminChallenge) => {
+    if (!token) return;
+    if (confirmingPermanentId !== challenge.id) {
+      setConfirmingPermanentId(challenge.id);
+      return;
+    }
+    setConfirmingPermanentId(null);
+    const result = await permanentlyDeleteAdminChallenge(token, challenge.id);
+    if (!result.ok) {
+      show(result.message);
+      return;
+    }
+    setChallenges((prev) => prev.filter((c) => c.id !== challenge.id));
   };
 
   const handleCancelBoost = async (boost: AdminBoost) => {
@@ -186,6 +207,13 @@ export default function DevScreen() {
                 <Pressable hitSlop={8} onPress={() => handleDelete(challenge)}>
                   <Text style={styles.deleteText}>Delete</Text>
                 </Pressable>
+                {!challenge.active && (
+                  <Pressable hitSlop={8} onPress={() => handlePermanentDelete(challenge)}>
+                    <Text style={styles.permanentDeleteText}>
+                      {confirmingPermanentId === challenge.id ? 'Tap to confirm' : 'Delete permanently'}
+                    </Text>
+                  </Pressable>
+                )}
               </View>
             </View>
           </View>
@@ -291,5 +319,6 @@ const styles = StyleSheet.create({
   rowActions: { alignItems: 'flex-end', gap: 6 },
   rowActionsInline: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   deleteText: { color: Colors.red, fontWeight: '800', fontSize: 12 },
+  permanentDeleteText: { color: Colors.muted, fontWeight: '800', fontSize: 10.5, textDecorationLine: 'underline' },
   statusText: { fontWeight: '800', fontSize: 11.5 },
 });

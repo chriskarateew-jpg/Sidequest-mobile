@@ -79,6 +79,12 @@ export function deleteChallenge(token: string, id: string) {
   return call<{ ok: true }>(`/admin/challenges/${id}`, token, { method: 'DELETE' });
 }
 
+// Only succeeds once the task is already deactivated — see
+// server/src/dev-challenges.ts's handleAdminPermanentlyDeleteChallenge.
+export function permanentlyDeleteChallenge(token: string, id: string) {
+  return call<{ ok: true }>(`/admin/challenges/${id}/permanent`, token, { method: 'DELETE' });
+}
+
 export function previewPrompt(token: string, id: string) {
   return call<{ prompt: string }>(`/admin/challenges/${id}/preview-prompt`, token);
 }

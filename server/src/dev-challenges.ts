@@ -1,9 +1,16 @@
 // Gumpa — developer-authored custom challenges. Lets the developer add new
 // tasks to the live app (title, description, token payout, proof method)
-// without an app-store release. Rows are soft-deleted (active=0), never
-// hard-deleted, so an id already handed to a client — or referenced by a
-// past completions/posts row — stays resolvable forever (see catalog.ts),
-// same rule already used for local_challenges.
+// without an app-store release. Rows are soft-deleted (active=0) by
+// default — deactivating, not erasing — so an id already handed to a
+// client doesn't 404 mid-flight for anyone with it already loaded.
+// A genuine hard delete (handleAdminPermanentlyDeleteChallenge below) is
+// also available, but only on an already-inactive row, as a deliberate
+// second step: no table has a foreign key on dev_challenges.id, and a
+// completed post's title/desc/tokens are frozen at completion time
+// (see server/src/feed.ts), never re-resolved from this table — so
+// removing the row doesn't corrupt any existing history. It only stops
+// the id from resolving for a *new* /verify or /complete call, which
+// deactivating it already does identically.
 
 import { requireAuth, requireDeveloper } from './auth';
 import type { Cadence, ProofType, VerifyType } from './tokens';
@@ -343,6 +350,23 @@ export async function handleAdminDeleteChallenge(request: Request, env: Env, id:
 
   const result = await env.DB.prepare('UPDATE dev_challenges SET active = 0, updated_at = ? WHERE id = ?').bind(Date.now(), id).run();
   if (result.meta.changes === 0) return error('Not found', 404);
+  return json({ ok: true });
+}
+
+// True hard delete — only allowed on an already-deactivated row (see file
+// header for why this is safe: nothing has a foreign key on this id, and
+// existing post history is frozen text, not a live lookup). Requires the
+// explicit deactivate-then-delete order rather than deleting an active row
+// in one step, so it can't be reached by a single misclick.
+export async function handleAdminPermanentlyDeleteChallenge(request: Request, env: Env, id: string): Promise<Response> {
+  const auth = await requireDeveloper(request, env);
+  if (!auth) return error('Not found', 404);
+
+  const existing = await env.DB.prepare('SELECT active FROM dev_challenges WHERE id = ?').bind(id).first<{ active: number }>();
+  if (!existing) return error('Not found', 404);
+  if (existing.active) return error('Deactivate this task before permanently deleting it.');
+
+  await env.DB.prepare('DELETE FROM dev_challenges WHERE id = ?').bind(id).run();
   return json({ ok: true });
 }
 
