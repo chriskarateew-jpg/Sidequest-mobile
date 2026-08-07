@@ -150,30 +150,24 @@ function seededShuffle<T>(arr: T[], seedStr: string): T[] {
   return a;
 }
 
-// `extra` (local challenges) is folded into the pool before filtering, so
-// the one-per-category-first logic below lets them compete against the
-// static 'explore' entries same as before — but that competition alone left
-// local challenges showing up as roughly a coin flip, since 'explore' is
-// only one of six categories fighting for `count` slots. On top of that,
-// local challenges always get a guaranteed slot when any exist for this
-// cadence and the regular rotation didn't already surface one — exploring
-// real nearby places should be a reliable presence, not a maybe. That slot
-// is carved out of `count` (replacing the last regular pick), never added
-// on top of it — `count` is a hard cap on how many cards a section shows,
-// so with count=1 (monthly) this swaps in the local pick instead of
-// producing a second card.
+// Fills as many slots as possible from real nearby places first (`extra`,
+// server-generated local challenges), then backfills any remaining slots
+// from the static/dev-authored catalog — instead of competing them in one
+// shuffled pool with just a single guaranteed local slot. A sparse region
+// with few or no local candidates for this cadence degrades gracefully to a
+// partial or full static backfill; a dense region with `count` or more
+// local candidates shows only real venues. Applies identically to every
+// cadence — daily naturally behaves as pure static-shuffle today since no
+// daily-cadence local challenges exist.
 function pickSuggestions(cadence: Cadence, count: number, extra: Challenge[], custom: Challenge[]): Challenge[] {
-  const pool = [...CHALLENGES, ...extra, ...custom].filter((c) => c.cadence === cadence);
-  const shuffled = seededShuffle(pool, cadence + ':' + periodKeyFor(cadence));
-  const picked = shuffled.slice(0, count);
-
   const localForCadence = extra.filter((c) => c.cadence === cadence);
-  if (localForCadence.length > 0 && !picked.some((c) => c.isLocal)) {
-    const guaranteed = seededShuffle(localForCadence, cadence + ':guaranteed:' + periodKeyFor(cadence))[0];
-    if (picked.length < count) picked.push(guaranteed);
-    else picked[picked.length - 1] = guaranteed;
-  }
+  const staticPool = [...CHALLENGES, ...custom].filter((c) => c.cadence === cadence);
 
+  const shuffledLocal = seededShuffle(localForCadence, cadence + ':local:' + periodKeyFor(cadence));
+  const shuffledStatic = seededShuffle(staticPool, cadence + ':' + periodKeyFor(cadence));
+
+  const picked = shuffledLocal.slice(0, count);
+  if (picked.length < count) picked.push(...shuffledStatic.slice(0, count - picked.length));
   return picked;
 }
 

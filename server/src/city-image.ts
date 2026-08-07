@@ -28,6 +28,10 @@ const FETCH_TIMEOUT_MS = 10_000;
 const THUMB_WIDTH = 1200;
 const COMMONS_GEOSEARCH_RADIUS_M = 4000;
 const COMMONS_GEOSEARCH_LIMIT = 10;
+// A single venue (a cafe, a park) needs a much tighter geosearch radius than
+// a whole region — a few hundred meters, not several km — otherwise a
+// "venue photo" is really just the region photo again with extra API calls.
+const VENUE_GEOSEARCH_RADIUS_M = 300;
 // How far a matched Wikipedia page's own infobox coordinates may sit from
 // the requested point before we reject the match as a probable name
 // collision rather than the actual place — e.g. "Woodstock" on its own
@@ -50,6 +54,12 @@ const NEGATIVE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 interface CityImageRow {
   region_key: string;
   city_name: string | null;
+  image_url: string | null;
+  created_at: number;
+}
+
+interface VenueImageRow {
+  venue_key: string;
   image_url: string | null;
   created_at: number;
 }
@@ -130,9 +140,11 @@ async function fetchCityImage(cityName: string, lat: number, lng: number): Promi
 
 // Fallback for when no address-derived place name has a Wikipedia lead
 // image: search Wikimedia Commons directly for photos geotagged near the
-// exact coordinates, no place name required at all.
-async function fetchCommonsNearbyImage(lat: number, lng: number): Promise<string | null> {
-  const searchUrl = `${COMMONS_API_URL}?action=query&list=geosearch&gscoord=${lat}|${lng}&gsradius=${COMMONS_GEOSEARCH_RADIUS_M}&gsnamespace=6&gslimit=${COMMONS_GEOSEARCH_LIMIT}&format=json`;
+// exact coordinates, no place name required at all. radiusMeters is
+// parameterized so getVenueImage can reuse this at a much tighter radius
+// than a whole region's geosearch.
+async function fetchCommonsNearbyImage(lat: number, lng: number, radiusMeters: number = COMMONS_GEOSEARCH_RADIUS_M): Promise<string | null> {
+  const searchUrl = `${COMMONS_API_URL}?action=query&list=geosearch&gscoord=${lat}|${lng}&gsradius=${radiusMeters}&gsnamespace=6&gslimit=${COMMONS_GEOSEARCH_LIMIT}&format=json`;
   const searchData = (await fetchJson(searchUrl)) as { query?: { geosearch?: { title: string }[] } } | null;
   const titles = searchData?.query?.geosearch?.map((g) => g.title) ?? [];
   if (titles.length === 0) return null;
@@ -177,6 +189,30 @@ export async function getCityImageForRegion(env: Env, regionKey: string, lat: nu
 
   await env.DB.prepare('INSERT OR REPLACE INTO city_images (region_key, city_name, image_url, created_at) VALUES (?, ?, ?, ?)')
     .bind(regionKey, matchedName ?? candidates[0] ?? null, imageUrl, Date.now())
+    .run();
+
+  return imageUrl;
+}
+
+// Per-venue image, one per local_challenges row, so cards in the same batch
+// don't all show the same shared region photo. No reverse-geocode/Wikipedia
+// step here — that path is keyed by place *name* and right for a whole
+// city, wrong for a single cafe or park — just a tight-radius Commons
+// geosearch centered on the venue's own coordinates. Same permanent-success
+// / 30-day-negative-TTL cache split as getCityImageForRegion, for the same
+// reason (see this file's header comment on the NYC negative-cache
+// incident). Caller falls back to the region's shared image when this
+// returns null, so a venue never ends up with no image at all.
+export async function getVenueImage(env: Env, venueKey: string, lat: number, lng: number): Promise<string | null> {
+  const cached = await env.DB.prepare('SELECT * FROM venue_images WHERE venue_key = ?').bind(venueKey).first<VenueImageRow>();
+  if (cached && (cached.image_url !== null || Date.now() - cached.created_at < NEGATIVE_CACHE_TTL_MS)) {
+    return cached.image_url;
+  }
+
+  const imageUrl = await fetchCommonsNearbyImage(lat, lng, VENUE_GEOSEARCH_RADIUS_M);
+
+  await env.DB.prepare('INSERT OR REPLACE INTO venue_images (venue_key, image_url, created_at) VALUES (?, ?, ?)')
+    .bind(venueKey, imageUrl, Date.now())
     .run();
 
   return imageUrl;

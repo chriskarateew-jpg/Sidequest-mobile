@@ -14,5 +14,8 @@ export async function fetchLocalChallenges(params: { token: string; lat: number;
 
   const data = (await res.json()) as { challenges?: Challenge[]; cityImage?: string | null };
   const challenges = Array.isArray(data.challenges) ? data.challenges : [];
-  return challenges.map((c) => ({ ...c, isLocal: true, ...(data.cityImage ? { bgImage: data.cityImage } : {}) }));
+  // Each challenge carries its own venue image when the server found one;
+  // only fall back to the region's shared image for a challenge that didn't
+  // get its own (see server/src/local-challenges.ts's respondWithChallenges).
+  return challenges.map((c) => ({ ...c, isLocal: true, bgImage: c.bgImage ?? data.cityImage ?? undefined }));
 }

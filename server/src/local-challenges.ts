@@ -9,10 +9,10 @@
 // for the rest of whatever period it was suggested in.
 
 import { requireAuth } from './auth';
-import { getCityImageForRegion } from './city-image';
+import { getCityImageForRegion, getVenueImage } from './city-image';
 import type { Env } from './env';
 import { error, json } from './http';
-import { fetchNearbyPlaces, type NearbyPlace, type PlaceCategory } from './places';
+import { fetchDestinationPlaces, fetchNearbyPlaces, type NearbyPlace, type PlaceCategory } from './places';
 import { checkRateLimit } from './ratelimit';
 
 const MODEL = 'claude-haiku-4-5-20251001';
@@ -22,19 +22,26 @@ const MAX_TITLE_LENGTH = 60;
 const MAX_DESC_LENGTH = 140;
 const VENUES_PER_CATEGORY = 2;
 const MAX_VENUES_PER_BATCH = 8;
+// A handful of destination candidates per region, not just one — rows are
+// immutable and only 1 monthly slot shows at a time, so a few options let
+// the client's seeded shuffle rotate across months instead of the same
+// destination coming back every time the region's batch regenerates.
+const DESTINATION_VENUES_LIMIT = 3;
 
-// All venue categories land on the weekly slate — a single sit-down visit,
-// same as the rest of the weekly-explore entries. Landmarks (museums,
-// monuments, viewpoints) take more effort than a coffee run, so they carry a
-// higher reward within that same cadence (matches the static w-tourist
-// reward) rather than being bumped up to monthly — monthly only ever shows
-// one card (see pickSuggestions in store.ts), and a local pick there was
-// crowding out the static monthly slate instead of adding to the weekly one.
+// Close/landmark categories land on the weekly slate — a single sit-down
+// visit. Landmarks (museums, monuments, viewpoints) take more effort than a
+// coffee run, so they carry a higher reward within that same cadence
+// (matches the static w-tourist reward) rather than being bumped to
+// monthly. Destination venues (same tourism/historic tags, but a much wider
+// "day trip" radius — see fetchDestinationPlaces) are the monthly tier: a
+// real trip out of town is a bigger ask than anything weekly, so it carries
+// the highest reward.
 const CATEGORY_PROFILE: Record<PlaceCategory, { cadence: 'weekly' | 'monthly'; tokens: number }> = {
   park: { cadence: 'weekly', tokens: 60 },
   cafe: { cadence: 'weekly', tokens: 60 },
   restaurant: { cadence: 'weekly', tokens: 60 },
   landmark: { cadence: 'weekly', tokens: 75 },
+  destination: { cadence: 'monthly', tokens: 150 },
 };
 
 export interface LocalChallengeRow {
@@ -61,10 +68,19 @@ function bucketRegionKey(lat: number, lng: number): string {
   return `${round2(lat).toFixed(2)},${round2(lng).toFixed(2)}`;
 }
 
-function toClientChallenge(row: LocalChallengeRow) {
+function toClientChallenge(row: LocalChallengeRow, bgImage: string | null) {
   // Always 'camera' — a local challenge is a real-venue visit by
   // construction, never a screenshot task (see ProofType in tokens.ts).
-  return { id: row.id, cadence: row.cadence, tokens: row.tokens, title: row.title, desc: row.description, verify: row.verify_type, proofType: 'camera' as const };
+  return {
+    id: row.id,
+    cadence: row.cadence,
+    tokens: row.tokens,
+    title: row.title,
+    desc: row.description,
+    verify: row.verify_type,
+    proofType: 'camera' as const,
+    ...(bgImage ? { bgImage } : {}),
+  };
 }
 
 async function loadBatch(env: Env, regionKey: string, freshOnly: boolean): Promise<LocalChallengeRow[] | null> {
@@ -151,6 +167,7 @@ const CATEGORY_VERB: Record<PlaceCategory, string> = {
   cafe: 'Grab a coffee at',
   restaurant: 'Grab a bite at',
   landmark: 'Go visit',
+  destination: 'Plan a day trip to',
 };
 
 // Plain, non-LLM copy for a single venue — never fails, never needs a
@@ -232,9 +249,26 @@ async function generateBatch(env: Env, regionKey: string, lat: number, lng: numb
     return null;
   }
 
-  const venues = pickDiverseVenues(places);
-  if (venues.length === 0) return null;
+  const weeklyVenues = pickDiverseVenues(places);
+  if (weeklyVenues.length === 0) return null;
 
+  // Sequenced after the weekly fetch, not run alongside it — fetchNearbyPlaces
+  // already fires 2 concurrent Overpass requests (close+landmark); a 3rd
+  // concurrent one was observed getting HTTP 429'd by Overpass's shared
+  // public instance during testing even though close+landmark succeeded.
+  // This path is rare (7-day region cache + 5/day generation limit), so the
+  // extra latency here is worth trading for not tripping their rate limit.
+  const destinationPlaces = await fetchDestinationPlaces(lat, lng);
+
+  // Destination tier is additive, never blocking — a region with real
+  // nearby parks/cafes but no far-out landmarks still gets a full weekly
+  // batch, with monthly silently falling back to static for that batch
+  // (same graceful-degradation contract as an empty weekly result today).
+  const weeklyNames = new Set(weeklyVenues.map((v) => v.name.toLowerCase().trim()));
+  const destinationCandidates = destinationPlaces.filter((v) => !weeklyNames.has(v.name.toLowerCase().trim()));
+  const destinationVenues = pickDiverseVenues(destinationCandidates).slice(0, DESTINATION_VENUES_LIMIT);
+
+  const venues = [...weeklyVenues, ...destinationVenues];
   const copy = await generateCopy(env, venues);
 
   const createdAt = Date.now();
@@ -268,15 +302,21 @@ async function generateBatch(env: Env, regionKey: string, lat: number, lng: numb
   return rows;
 }
 
-// Shared response builder for every return path below — attaches the
-// region's cached background image (see city-image.ts) alongside the
-// challenge batch. Skipped entirely when there are no challenges to
-// decorate, so an empty result never pays for a reverse-geocode/Wikipedia
-// lookup.
+// Shared response builder for every return path below — resolves a
+// per-venue image for each row (falling back to the region's shared image
+// when a venue has none of its own) alongside the challenge batch. Skipped
+// entirely when there are no challenges to decorate, so an empty result
+// never pays for a reverse-geocode/Wikipedia/Commons lookup.
 async function respondWithChallenges(env: Env, regionKey: string, lat: number, lng: number, rows: LocalChallengeRow[]): Promise<Response> {
   if (rows.length === 0) return json({ challenges: [], cityImage: null });
   const cityImage = await getCityImageForRegion(env, regionKey, lat, lng);
-  return json({ challenges: rows.map(toClientChallenge), cityImage });
+  const challenges = await Promise.all(
+    rows.map(async (row) => {
+      const venueImage = await getVenueImage(env, row.id, row.place_lat, row.place_lng);
+      return toClientChallenge(row, venueImage ?? cityImage);
+    })
+  );
+  return json({ challenges, cityImage });
 }
 
 export async function handleGetLocalChallenges(request: Request, env: Env): Promise<Response> {

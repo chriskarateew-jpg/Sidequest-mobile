@@ -126,6 +126,22 @@ Don't write a new challenge whose desc says "screenshot" without setting
 Screenshots-album picker when the challenge declares it, and camera-only
 capture can't produce a screenshot at all.
 
+## Location fields (optional, for a real-venue task)
+
+A dev-authored task can optionally be tied to a real place the same way a
+server-generated local challenge already is: set `placeLat`, `placeLng`, and
+`radiusMeters` together (all three or none — `server/src/location-fields.ts`
+rejects a partial set). `radiusMeters` must be a whole number between 20 and
+5000. At completion time, `complete.ts`'s `checkPhotoFraud` requires the
+submission photo's GPS fix to fall within that radius of the target
+coordinates, rejecting anything outside it as a location mismatch — the same
+fraud check every server-generated local challenge gets for free. Both
+authoring UIs already support setting these: the map picker in
+`src/app/dev-challenge-form.tsx` (`LocationPickerMap`), and the
+lat/lng/radius fields in `dashboard/src/pages/TaskForm.tsx`. Weekly and
+monthly tasks are the natural fit for this (a specific restaurant, a
+specific trailhead); daily tasks generally shouldn't need it.
+
 ## Checklist before adding a challenge
 
 - [ ] Routine-breaking — a new place, object, activity, or rerouted habit, not just business as usual

@@ -14,7 +14,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export type PlaceCategory = 'park' | 'cafe' | 'restaurant' | 'landmark';
+export type PlaceCategory = 'park' | 'cafe' | 'restaurant' | 'landmark' | 'destination';
 
 export interface NearbyPlace {
   name: string;
@@ -64,6 +64,25 @@ out center ${PER_CATEGORY_LIMIT};
 // landmark portion alone was too expensive. Splitting the request means a
 // landmark timeout only costs the landmark slot, not the whole batch.
 function buildLandmarkQuery(lat: number, lng: number, radiusMeters: number): string {
+  const around = `around:${radiusMeters},${lat},${lng}`;
+  return `
+[out:json][timeout:25];
+(
+  node["tourism"~"^(attraction|museum|viewpoint|artwork)$"]["name"](${around});
+  node["historic"~"^(monument|memorial|castle|ruins)$"]["name"](${around});
+);
+out center ${PER_CATEGORY_LIMIT};
+`.trim();
+}
+
+// Same tourism/historic tags as the landmark query, at a much wider "day
+// trip" radius — reused rather than a new tag set since the distinction
+// between "landmark" (weekly, same-town) and "destination" (monthly, worth
+// a planned trip) is about distance, not venue type. Isolated into its own
+// request for the same reason landmark is split from close: a wide radius
+// in a dense city can blow Overpass's 25s timeout, and that must not be
+// able to take the weekly close/landmark fetch down with it.
+function buildDestinationQuery(lat: number, lng: number, radiusMeters: number): string {
   const around = `around:${radiusMeters},${lat},${lng}`;
   return `
 [out:json][timeout:25];
@@ -128,7 +147,11 @@ async function runQuery(query: string, attempt = 1): Promise<OverpassElement[]> 
   }
 }
 
-function elementsToPlaces(elements: OverpassElement[], seen: Set<string>): NearbyPlace[] {
+// categoryOverride lets the destination query force every result to
+// 'destination' rather than 'landmark' — same OSM tags as buildLandmarkQuery,
+// but the wider radius means these are a different (monthly-cadence) tier,
+// not more landmark results.
+function elementsToPlaces(elements: OverpassElement[], seen: Set<string>, categoryOverride?: PlaceCategory): NearbyPlace[] {
   const places: NearbyPlace[] = [];
   for (const el of elements) {
     const name = el.tags?.name;
@@ -139,7 +162,7 @@ function elementsToPlaces(elements: OverpassElement[], seen: Set<string>): Nearb
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
 
-    places.push({ name, category: categorize(el.tags), ...point });
+    places.push({ name, category: categoryOverride ?? categorize(el.tags), ...point });
   }
   return places;
 }
@@ -157,4 +180,15 @@ export async function fetchNearbyPlaces(
 
   const seen = new Set<string>();
   return [...elementsToPlaces(closeElements, seen), ...elementsToPlaces(landmarkElements, seen)];
+}
+
+// Separate request from fetchNearbyPlaces on purpose (see buildDestinationQuery)
+// — its own failure domain, its own dedupe set, called independently so a
+// slow/failed destination fetch never affects the weekly close/landmark
+// result. Caller (local-challenges.ts) is responsible for deduping these
+// against whatever fetchNearbyPlaces already picked for the same region,
+// since both queries share the same tourism/historic tags and can overlap.
+export async function fetchDestinationPlaces(lat: number, lng: number, radiusMeters = 30_000): Promise<NearbyPlace[]> {
+  const elements = await runQuery(buildDestinationQuery(lat, lng, radiusMeters));
+  return elementsToPlaces(elements, new Set<string>(), 'destination');
 }
