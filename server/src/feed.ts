@@ -125,10 +125,13 @@ export async function handleToggleKudos(request: Request, env: Env, postId: stri
 
 // Deletes one of the caller's own posts. Only removes the post/its
 // reactions/comments and the underlying R2 photo — deliberately leaves the
-// completions row (and its already-credited tokens_earned) untouched, so
-// deleting a post can't be used to re-earn the same challenge in the same
-// period. completions.post_id is write-only elsewhere (never dereferenced
-// to look up a post), so a dangling reference there after this is harmless.
+// completions row itself (and its already-credited tokens_earned)
+// untouched, so deleting a post can't be used to re-earn the same
+// challenge in the same period. completions.post_id is a real foreign key
+// to posts(id) (migration 0007) and D1 does enforce it, so it has to be
+// nulled out before the posts row is deleted — leaving it dangling isn't
+// an option like it is for the write-only fields elsewhere, this one
+// actively blocks the delete with a constraint failure if skipped.
 export async function handleDeletePost(request: Request, env: Env, postId: string): Promise<Response> {
   const auth = await requireAuth(request, env);
   if (!auth) return error('Not authenticated', 401);
@@ -143,6 +146,7 @@ export async function handleDeletePost(request: Request, env: Env, postId: strin
   await env.DB.batch([
     env.DB.prepare('DELETE FROM post_kudos WHERE post_id = ?').bind(postId),
     env.DB.prepare('DELETE FROM post_comments WHERE post_id = ?').bind(postId),
+    env.DB.prepare('UPDATE completions SET post_id = NULL WHERE post_id = ?').bind(postId),
     env.DB.prepare('DELETE FROM posts WHERE id = ?').bind(postId),
   ]);
 
