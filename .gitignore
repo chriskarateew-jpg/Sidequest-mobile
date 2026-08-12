@@ -37,6 +37,7 @@ yarn-error.*
 # verification backend (server/)
 server/.dev.vars
 server/.wrangler/
+/.wrangler/
 
 # run-gumpa-mobile skill — screenshots are ephemeral verification output
 .claude/skills/run-gumpa-mobile/screenshots/
