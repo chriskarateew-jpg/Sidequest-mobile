@@ -58,6 +58,7 @@ export async function resolveBaseCatalogEntry(env: Env, challengeId: string): Pr
       ...(devRow.place_lat != null && devRow.place_lng != null
         ? { placeLat: devRow.place_lat, placeLng: devRow.place_lng, radiusMeters: devRow.radius_meters ?? undefined }
         : {}),
+      ...(devRow.early_access ? { earlyAccessOnly: true } : {}),
     };
   }
 

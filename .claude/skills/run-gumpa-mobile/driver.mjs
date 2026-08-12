@@ -62,12 +62,42 @@ function seedLocalState() {
   };
 }
 
+// Seeds just the streak portion of gumpa_state_v1 with a specific
+// {count, lastDay} — for testing docs/gumpa-plus-perks-roadmap.md Phase 6's
+// grace-day logic without waiting real days to pass. lastDay is computed as
+// N days before "now" in local time, matching src/lib/store.ts's own
+// dayKey (local Date methods, not UTC — Node and headless Chromium share
+// the same system timezone here, so this lines up). Must be seeded via
+// addInitScript BEFORE nav, same constraint as seed-local.
+function seedStreakState(count, daysAgoOffset) {
+  const d = new Date(Date.now() - Number(daysAgoOffset) * 86400000);
+  const pad = (n) => String(n).padStart(2, '0');
+  const lastDay = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return {
+    tokens: 120,
+    xp: 0,
+    completions: {},
+    streak: { count: Number(count), lastDay },
+    weekly: { key: null, earned: 0 },
+    localChallenges: [],
+    localChallengesFetchedAt: null,
+    locationOptOut: false,
+  };
+}
+
 async function cmd_launch() {
   browser = await chromium.launch();
   page = await browser.newPage({ viewport: { width: 420, height: 900 } });
   page.on('console', (msg) => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
   page.on('pageerror', (err) => consoleErrors.push('pageerror: ' + err.message));
   console.log('launched');
+}
+
+async function cmd_seedStreak(count, daysAgoOffset) {
+  await page.addInitScript((seed) => {
+    window.localStorage.setItem('gumpa_state_v1', JSON.stringify(seed));
+  }, seedStreakState(count, daysAgoOffset));
+  console.log(`seeded streak: count=${count} lastDay=${daysAgoOffset}d ago (will apply on next nav)`);
 }
 
 async function cmd_seedLocal() {
@@ -246,6 +276,7 @@ async function cmd_quit() {
 const HANDLERS = {
   launch: cmd_launch,
   'seed-local': cmd_seedLocal,
+  'seed-streak': cmd_seedStreak,
   nav: cmd_nav,
   signup: cmd_signup,
   login: cmd_login,

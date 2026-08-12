@@ -41,6 +41,11 @@ export interface AdminChallenge {
   verifiabilityNotes: string | null;
   guideChecklist: GuideChecklist | null;
   active: boolean;
+  // Developer-controlled Gumpa+ gate (docs/gumpa-plus-perks-roadmap.md
+  // Phase 4) — a plain toggle, unlike active it's sent as part of the
+  // normal create/update body, not a separate bare-toggle call, though the
+  // server also accepts a bare {earlyAccess} PATCH for a quick flip.
+  earlyAccess: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -63,6 +68,7 @@ export interface AdminChallengeInput {
   // Create only — server defaults true when omitted. Update never sends
   // this; active is toggled separately via setAdminChallengeActive.
   active?: boolean;
+  earlyAccess?: boolean;
 }
 
 export interface AdminBoost {

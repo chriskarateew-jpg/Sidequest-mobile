@@ -17,6 +17,7 @@ import type { Cadence, ProofType, VerifyType } from './tokens';
 import type { Env } from './env';
 import { error, json, safeJson } from './http';
 import { parseOptionalLocation, type LocationFields } from './location-fields';
+import { userHasGumpaPlus } from './subscriptions';
 import { buildPrompt } from './verify';
 
 const VALID_CADENCES: Cadence[] = ['daily', 'weekly', 'monthly'];
@@ -59,6 +60,11 @@ export interface DevChallengeRow {
   verifiability_notes: string | null;
   guide_checklist: string | null; // JSON-encoded GuideChecklist
   active: number;
+  // Developer-controlled Gumpa+ gate (docs/gumpa-plus-perks-roadmap.md
+  // Phase 4) — a plain toggle, not a timestamp. When set, only visible via
+  // GET /challenges/custom and completable via /verify+/complete for a
+  // subscriber, until the developer flips it back off.
+  early_access: number;
   created_by: string;
   created_at: number;
   updated_at: number;
@@ -116,6 +122,7 @@ function toAdminShape(row: DevChallengeRow) {
     verifiabilityNotes: row.verifiability_notes,
     guideChecklist: parseGuideChecklist(row.guide_checklist),
     active: !!row.active,
+    earlyAccess: !!row.early_access,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -138,6 +145,7 @@ function parseChallengeBody(body: Record<string, unknown>): {
   proofReject: string | null;
   verifiabilityNotes: string | null;
   guideChecklist: string | null;
+  earlyAccess: boolean;
   // Non-blocking — surfaced by the dashboard (Phase 5) for a human to weigh,
   // never used to reject a save. See RED_FLAG_VERBS above.
   warnings: string[];
@@ -212,17 +220,46 @@ function parseChallengeBody(body: Record<string, unknown>): {
     guideChecklist = JSON.stringify(normalized);
   }
 
-  return { title, desc, tokens, cadence, verify, proofType, streakTarget, location, proofAccept, proofReject, verifiabilityNotes, guideChecklist, warnings };
+  // A plain boolean, developer-set only — see DevChallengeRow's comment on
+  // early_access for why this is intentionally not a timestamp.
+  const earlyAccess = body.earlyAccess === true;
+
+  return {
+    title,
+    desc,
+    tokens,
+    cadence,
+    verify,
+    proofType,
+    streakTarget,
+    location,
+    proofAccept,
+    proofReject,
+    verifiabilityNotes,
+    guideChecklist,
+    earlyAccess,
+    warnings,
+  };
 }
 
 // GET /challenges/custom — every logged-in user needs this to see custom
 // challenges in their suggestion pool, same trust level as /local-challenges.
+// An early_access row is filtered out here for a non-subscriber entirely —
+// not sent with a "locked" flag — so it simply doesn't exist yet from their
+// point of view, matching the "subscribers get it first" framing. The same
+// gate is re-checked independently server-side at /verify and /complete
+// (see verify.ts/complete.ts) since this listing filter alone is a UX nicety,
+// not the real enforcement — a non-subscriber could otherwise still discover
+// and submit against an id it never saw listed.
 export async function handleListCustomChallenges(request: Request, env: Env): Promise<Response> {
   const auth = await requireAuth(request, env);
   if (!auth) return error('Not authenticated', 401);
 
+  const hasGumpaPlus = await userHasGumpaPlus(env, auth.id);
+
   const { results } = await env.DB.prepare('SELECT * FROM dev_challenges WHERE active = 1').all<DevChallengeRow>();
-  return json({ challenges: (results ?? []).map(toClientChallenge) });
+  const visible = (results ?? []).filter((row) => hasGumpaPlus || !row.early_access);
+  return json({ challenges: visible.map(toClientChallenge) });
 }
 
 export async function handleAdminListChallenges(request: Request, env: Env): Promise<Response> {
@@ -252,8 +289,8 @@ export async function handleAdminCreateChallenge(request: Request, env: Env): Pr
   const id = crypto.randomUUID();
   const now = Date.now();
   await env.DB.prepare(
-    `INSERT INTO dev_challenges (id, title, desc, tokens, cadence, verify_type, proof_type, streak_target, place_lat, place_lng, radius_meters, proof_accept, proof_reject, verifiability_notes, guide_checklist, active, created_by, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO dev_challenges (id, title, desc, tokens, cadence, verify_type, proof_type, streak_target, place_lat, place_lng, radius_meters, proof_accept, proof_reject, verifiability_notes, guide_checklist, active, early_access, created_by, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       id,
@@ -272,6 +309,7 @@ export async function handleAdminCreateChallenge(request: Request, env: Env): Pr
       parsed.verifiabilityNotes,
       parsed.guideChecklist,
       requestedActive ? 1 : 0,
+      parsed.earlyAccess ? 1 : 0,
       auth.id,
       now,
       now
@@ -292,18 +330,26 @@ export async function handleAdminUpdateChallenge(request: Request, env: Env, id:
   const body = await safeJson(request);
   if (!body) return error('Invalid JSON body');
 
-  // A bare {"active": false} toggle doesn't need every other field re-sent.
+  // A bare {"active": false} toggle doesn't need every other field re-sent —
+  // same for {"earlyAccess": false}, the "push this to everyone" action the
+  // developer will use most once a task's early-access window is over
+  // (docs/gumpa-plus-perks-roadmap.md Phase 4).
+  const bodyKeys = Object.keys(body);
   let warnings: string[] = [];
-  if (Object.keys(body).length === 1 && typeof body.active === 'boolean') {
+  if (bodyKeys.length === 1 && typeof body.active === 'boolean') {
     await env.DB.prepare('UPDATE dev_challenges SET active = ?, updated_at = ? WHERE id = ?')
       .bind(body.active ? 1 : 0, Date.now(), id)
+      .run();
+  } else if (bodyKeys.length === 1 && typeof body.earlyAccess === 'boolean') {
+    await env.DB.prepare('UPDATE dev_challenges SET early_access = ?, updated_at = ? WHERE id = ?')
+      .bind(body.earlyAccess ? 1 : 0, Date.now(), id)
       .run();
   } else {
     const parsed = parseChallengeBody(body);
     if (parsed instanceof Response) return parsed;
     warnings = parsed.warnings;
     await env.DB.prepare(
-      `UPDATE dev_challenges SET title = ?, desc = ?, tokens = ?, cadence = ?, verify_type = ?, proof_type = ?, streak_target = ?, place_lat = ?, place_lng = ?, radius_meters = ?, proof_accept = ?, proof_reject = ?, verifiability_notes = ?, guide_checklist = ?, updated_at = ? WHERE id = ?`
+      `UPDATE dev_challenges SET title = ?, desc = ?, tokens = ?, cadence = ?, verify_type = ?, proof_type = ?, streak_target = ?, place_lat = ?, place_lng = ?, radius_meters = ?, proof_accept = ?, proof_reject = ?, verifiability_notes = ?, guide_checklist = ?, early_access = ?, updated_at = ? WHERE id = ?`
     )
       .bind(
         parsed.title,
@@ -320,6 +366,7 @@ export async function handleAdminUpdateChallenge(request: Request, env: Env, id:
         parsed.proofReject,
         parsed.verifiabilityNotes,
         parsed.guideChecklist,
+        parsed.earlyAccess ? 1 : 0,
         Date.now(),
         id
       )

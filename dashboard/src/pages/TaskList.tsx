@@ -62,6 +62,7 @@ export function TaskList({
               <div className="task-title">{c.title}</div>
               <div className="task-meta">
                 <span className={`badge ${c.active ? '' : 'inactive'}`}>{c.active ? 'active' : 'inactive'}</span>
+                {c.earlyAccess && <span className="badge">early access</span>}
                 +{c.tokens} · {c.cadence}
                 {c.verify === 'streak' ? ` · streak/${c.streakTarget}` : ''}
               </div>

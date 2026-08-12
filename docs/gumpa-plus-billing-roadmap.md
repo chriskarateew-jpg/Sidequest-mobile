@@ -4,7 +4,7 @@ A checklist for standing up the business entity, bank account, and in-app billin
 
 ## The constraint this whole plan is built around
 
-Gumpa+ unlocks a feature inside the app (reward redemption), so Apple and Google require it to be sold through their own in-app purchase systems (StoreKit / Google Play Billing), not Stripe or any other processor. Apple rejects apps that try to route around this (App Store Review Guideline 3.1.1).
+Gumpa+ unlocks features inside the app — as of 2026-08-12 this is a bundle (token earn multiplier, streak protection, exclusive/early-access challenges, cosmetic flare, and capped gift-card redemption; see `docs/rewards-economy-plan.md` for why redemption alone isn't a sellable pitch on its own), not just reward redemption — so Apple and Google require it to be sold through their own in-app purchase systems (StoreKit / Google Play Billing), not Stripe or any other processor. Apple rejects apps that try to route around this (App Store Review Guideline 3.1.1). The same rule applies to the separate Store feature (one-time consumable purchases like token boosts, `server/src/store.ts`) — it's a different revenue stream from Gumpa+, but still in-app-purchase-gated for the same reason, and needs its own products created in App Store Connect / Play Console alongside the subscription.
 
 Money flow is therefore:
 
@@ -49,16 +49,18 @@ Stripe's role here is for money going out (buying gift cards, a future web check
 - [ ] Define a single entitlement (e.g. `gumpa_plus`) that both platforms' products map to
 - [ ] Create the subscription product in App Store Connect (subscription group, price tier, localized description)
 - [ ] Create the equivalent base plan in Play Console
-- [ ] Lock in the actual subscription price and per-cycle redemption cap (ties directly to the token exchange rate and breakeven math from the rewards economics conversation, don't set this arbitrarily)
+- [ ] Create the Store's non-renewing-purchase products in App Store Connect / Play Console (starts with one: `gumpa_store_boost_2x_24h`, "24-Hour Double Tokens" — see `server/src/store.ts`'s `STORE_CATALOG` for the product id this must match exactly)
+- [x] Lock in the actual subscription price and per-cycle redemption cap: **$9.99/month, $5/cycle redemption cap** (2026-08-12) — see `docs/rewards-economy-plan.md` for the margin math. This is the target number for creating the actual products below; it isn't set anywhere in app code (the price lives entirely in App Store Connect / Play Console), but the $5 cap **is** already enforced server-side (`REDEMPTION_CAP_USD_PER_CYCLE`, `server/src/rewards.ts`)
 
 ## Phase 6: Backend integration (app code, not business setup)
 
-- [ ] Add a `subscription_events` table (mirrors the existing `token_ledger` audit-trail pattern)
-- [ ] Add a `has_gumpa_plus` column to `users`
-- [ ] Add a `POST /webhooks/revenuecat` handler that updates subscription status on new subscription, renewal, and cancellation events
-- [ ] Add `react-native-purchases` (RevenueCat SDK) to the Expo app
-- [ ] Replace the hardcoded `HAS_GUMPA_PLUS = false` in `src/app/rewards.tsx` with a real entitlement check
-- [ ] Gate the server-side redemption endpoint (Phase 4 of the Rewards feature roadmap) on the same `has_gumpa_plus` flag, not just the client UI
+- [x] Add a `subscription_events` table (mirrors the existing `token_ledger` audit-trail pattern) — `server/migrations/0027_gumpa_plus_subscriptions.sql` (2026-08-12)
+- [x] Add a `has_gumpa_plus` column to `users` — same migration, plus `gumpa_plus_period_start`/`gumpa_plus_period_end` for cycle-anchored cap tracking
+- [x] Add a `POST /webhooks/revenuecat` handler that updates subscription status on new subscription, renewal, and cancellation events — `server/src/subscriptions.ts`, verified end-to-end against local D1 with real webhook payloads (auth rejection, entitlement grant, idempotency, expiration revoke) — see `docs/rewards-economy-plan.md`
+- [x] Extend the same webhook handler for the Store's one-time purchases — `NON_RENEWING_PURCHASE` events route to `server/src/store.ts`'s `applyStorePurchase` before the subscription logic runs, with their own idempotency table (`store_purchases`); verified end-to-end against local D1 (2026-08-12)
+- [ ] Add `react-native-purchases` (RevenueCat SDK) to the Expo app — blocked on Phase 5's RevenueCat account existing; don't install/wire this before there's a real account to connect it to. Covers both Gumpa+ and Store purchases, one SDK integration for both.
+- [ ] Replace the hardcoded `HAS_GUMPA_PLUS = false` in `src/app/rewards.tsx` with a real entitlement check, and the Store's "coming soon" purchase tap (`src/app/store.tsx`) with a real StoreKit/Play Billing purchase flow — both call paths behind them are already real (see next item), this is specifically the SDK-backed triggers, blocked on the same RevenueCat account as above
+- [x] Gate the server-side redemption endpoint on the same `has_gumpa_plus` flag, not just the client UI — `POST /rewards/redeem` (`server/src/rewards.ts`) reads `has_gumpa_plus` fresh from the DB on every call, plus enforces the $5/cycle cap and a 48-hour minimum subscription age; verified end-to-end locally
 
 ## Phase 7: Legal requirements before submission
 

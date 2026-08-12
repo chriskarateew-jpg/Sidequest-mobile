@@ -14,6 +14,7 @@ export const Colors = {
   accent2: '#5F6DED',
   accentSoft: '#DDE0FB',
   gold: '#FFB800',
+  goldDeep: '#C98A00', // the gradient's far end on TokenBadge's coin — gives it a lit, embossed feel instead of a flat gold circle
   goldSoft: '#FFF1CC',
   goldText: '#7A4E00',
   green: '#12B76A',

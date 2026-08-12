@@ -48,6 +48,7 @@ export function TaskForm({
   const [verifiabilityNotes, setVerifiabilityNotes] = useState(existing?.verifiabilityNotes ?? '');
   const [checklist, setChecklist] = useState<GuideChecklist>(existing?.guideChecklist ?? EMPTY_CHECKLIST);
   const [active, setActive] = useState(existing?.active ?? true);
+  const [earlyAccess, setEarlyAccess] = useState(existing?.earlyAccess ?? false);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,6 +89,7 @@ export function TaskForm({
       ...(proofReject.trim() ? { proofReject: proofReject.trim() } : {}),
       ...(verifiabilityNotes.trim() ? { verifiabilityNotes: verifiabilityNotes.trim() } : {}),
       guideChecklist: checklist,
+      earlyAccess,
     };
 
     setSaving(true);
@@ -195,6 +197,10 @@ export function TaskForm({
             <label htmlFor="active">Active (shows in rotation)</label>
           </div>
         )}
+        <div className="checkbox-row">
+          <input type="checkbox" checked={earlyAccess} onChange={(e) => setEarlyAccess(e.target.checked)} id="earlyAccess" />
+          <label htmlFor="earlyAccess">Early access (Gumpa+ only, until you push it to everyone)</label>
+        </div>
       </div>
 
       <h2>Location (optional)</h2>

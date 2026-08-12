@@ -1,17 +1,24 @@
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
+import type * as MediaLibrary from 'expo-media-library';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CadenceBadge, RewardPill } from '@/components/challenge-card';
+import { ScreenshotPicker } from '@/components/screenshot-picker';
 import { StarRating } from '@/components/star-rating';
+import { SubmissionResultModal, type SubmissionResult } from '@/components/submission-result-modal';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useAuthStore } from '@/lib/auth';
 import { reconcileSubmission, submitCompletion } from '@/lib/complete';
 import { useDraftSubmissionStore } from '@/lib/draft-submission';
+import { capturePhoto, resolveScreenshotAsset, type PhotoResult } from '@/lib/photo';
 import { useGumpaStore } from '@/lib/store';
 import { useToastStore } from '@/lib/toast';
+import { verifyPhoto } from '@/lib/verify';
+
+type ResolvedPhoto = Extract<PhotoResult, { status: 'ok' }>;
 
 const MAX_CAPTION_LENGTH = 240;
 
@@ -33,6 +40,10 @@ export default function SubmitReviewScreen() {
   const [caption, setCaption] = useState('');
   const [rating, setRating] = useState(0);
   const [posting, setPosting] = useState(false);
+  const [result, setResult] = useState<SubmissionResult | null>(null);
+  const [verifyingRetry, setVerifyingRetry] = useState(false);
+  const [screenshotPickerVisible, setScreenshotPickerVisible] = useState(false);
+  const busy = posting || verifyingRetry;
 
   // Only reachable via the router.push in challenge-card.tsx, which always
   // sets pending first — null here means a stale deep-link/reload, not a
@@ -43,6 +54,27 @@ export default function SubmitReviewScreen() {
   const handleCancel = () => {
     clearPending();
     router.back();
+  };
+
+  // The actual /complete call — split out so a failed attempt (rejected or
+  // network error) can be retried from the "Not submitted" popup without
+  // re-running the local optimistic apply in handlePost a second time.
+  const attemptSubmit = () => {
+    const trimmedCaption = caption.trim();
+    return reconcileSubmission(challenge, () =>
+      submitCompletion({
+        token: authToken!,
+        challengeId: challenge.id,
+        photoBase64: pending.photoBase64,
+        mediaType: pending.mediaType,
+        photoProof: pending.photoProof,
+        caption: trimmedCaption || undefined,
+        rating: rating || undefined,
+        hashThumbnailBase64: pending.hashThumbnailBase64,
+        lat: pending.lat,
+        lng: pending.lng,
+      })
+    );
   };
 
   const handlePost = async () => {
@@ -58,27 +90,92 @@ export default function SubmitReviewScreen() {
       return;
     }
 
-    show(`+${challenge.tokens} 🪙  ${challenge.title} posted!`);
-    const trimmedCaption = caption.trim();
-    const outcome = await reconcileSubmission(challenge, () =>
-      submitCompletion({
-        token: authToken,
-        challengeId: challenge.id,
-        photoBase64: pending.photoBase64,
-        mediaType: pending.mediaType,
-        photoProof: pending.photoProof,
-        caption: trimmedCaption || undefined,
-        rating: rating || undefined,
-        hashThumbnailBase64: pending.hashThumbnailBase64,
-        lat: pending.lat,
-        lng: pending.lng,
-      })
-    );
-    // A deliberate server-side refusal (duplicate photo, location mismatch) —
-    // reconcileSubmission above already rolled back whatever was applied
-    // optimistically to the server's authoritative state.
-    if (outcome.status === 'rejected') show(`❌ ${outcome.reason}`);
+    const outcome = await attemptSubmit();
+    setPosting(false);
 
+    if (outcome.status === 'ok') {
+      setResult({
+        status: 'submitted',
+        tokens: boost?.tokens ?? challenge.tokens,
+        photoUri: pending.photoUri,
+        title: challenge.title,
+        desc: challenge.desc,
+      });
+      return;
+    }
+    // A deliberate server-side refusal (duplicate photo, location mismatch)
+    // or a network/transient error — reconcileSubmission already rolled back
+    // whatever was applied optimistically for a 'rejected' outcome.
+    setResult({
+      status: 'not-submitted',
+      reason: outcome.status === 'rejected' ? outcome.reason : "Couldn't submit. Check your connection and try again.",
+    });
+  };
+
+  // Try Again re-prompts for a brand new photo/screenshot rather than
+  // resending the one that just failed — a duplicate-photo or GPS-mismatch
+  // rejection would just fail identically again on the exact same shot.
+  // Re-verifying replaces the pending draft's photo in place and drops the
+  // user back on this same review screen (caption/rating preserved) to
+  // press Post again, rather than silently resubmitting on their behalf.
+  const handleTryAgain = () => {
+    setResult(null);
+    if (challenge.proofType === 'screenshot') {
+      setScreenshotPickerVisible(true);
+    } else {
+      handleRecapture();
+    }
+  };
+
+  const handleRecapture = async () => {
+    const photo = await capturePhoto();
+    if (photo.status === 'denied') {
+      show('Camera access is required to submit proof.');
+      return;
+    }
+    if (photo.status === 'cancelled') return;
+    await reverifyAndReplace(photo);
+  };
+
+  const handleScreenshotRetry = async (asset: MediaLibrary.Asset) => {
+    setScreenshotPickerVisible(false);
+    const photo = await resolveScreenshotAsset(asset);
+    if (photo.status !== 'ok') return;
+    await reverifyAndReplace(photo);
+  };
+
+  const reverifyAndReplace = async (photo: ResolvedPhoto) => {
+    setVerifyingRetry(true);
+    const verdict = await verifyPhoto({
+      token: authToken!,
+      photoBase64: photo.base64,
+      mediaType: photo.mediaType,
+      challengeId: challenge.id,
+    });
+    setVerifyingRetry(false);
+
+    if (verdict.status === 'no-match') {
+      setResult({ status: 'not-submitted', reason: verdict.reason });
+      return;
+    }
+    if (verdict.status === 'error') {
+      setResult({ status: 'not-submitted', reason: "Couldn't verify that photo. Check your connection and try again." });
+      return;
+    }
+    useDraftSubmissionStore.getState().setPending({
+      challenge,
+      photoUri: photo.uri,
+      photoBase64: photo.base64,
+      mediaType: photo.mediaType,
+      photoProof: verdict.photoProof,
+      hashThumbnailBase64: photo.hashThumbnailBase64,
+      lat: photo.lat,
+      lng: photo.lng,
+    });
+  };
+
+  const handleResultDone = () => {
+    setResult(null);
     clearPending();
     router.back();
   };
@@ -87,14 +184,22 @@ export default function SubmitReviewScreen() {
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + Spacing.two }]}>
         <View style={styles.headRow}>
-          <Pressable onPress={handleCancel} hitSlop={8} style={styles.closeBtn} disabled={posting}>
+          <Pressable onPress={handleCancel} hitSlop={8} style={styles.closeBtn} disabled={busy}>
             <Text style={styles.closeBtnText}>✕</Text>
           </Pressable>
           <Text style={styles.pageTitle}>Review & post</Text>
           <View style={styles.closeBtnSpacer} />
         </View>
 
-        <Image source={{ uri: pending.photoUri }} style={styles.photo} contentFit="cover" />
+        <View>
+          <Image source={{ uri: pending.photoUri }} style={styles.photo} contentFit="cover" />
+          {verifyingRetry && (
+            <View style={styles.photoOverlay}>
+              <ActivityIndicator color="#fff" />
+              <Text style={styles.photoOverlayText}>Verifying new photo…</Text>
+            </View>
+          )}
+        </View>
 
         <View style={styles.card}>
           <Text style={styles.postingForLabel}>You're posting proof for</Text>
@@ -122,7 +227,7 @@ export default function SubmitReviewScreen() {
             onChangeText={setCaption}
             maxLength={MAX_CAPTION_LENGTH}
             multiline
-            editable={!posting}
+            editable={!busy}
           />
         </View>
       </ScrollView>
@@ -130,12 +235,15 @@ export default function SubmitReviewScreen() {
       <View style={[styles.footer, { paddingBottom: insets.bottom + Spacing.three }]}>
         <Pressable
           testID="review-post-button"
-          style={[styles.postBtn, posting && styles.postBtnDisabled]}
-          disabled={posting}
+          style={[styles.postBtn, busy && styles.postBtnDisabled]}
+          disabled={busy}
           onPress={handlePost}>
-          {posting ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.postBtnText}>Post</Text>}
+          {busy ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.postBtnText}>Post</Text>}
         </Pressable>
       </View>
+
+      <ScreenshotPicker visible={screenshotPickerVisible} onClose={() => setScreenshotPickerVisible(false)} onSelect={handleScreenshotRetry} />
+      <SubmissionResultModal result={result} onPost={handleResultDone} onTryAgain={handleTryAgain} onExit={handleResultDone} />
     </View>
   );
 }
@@ -157,6 +265,15 @@ const styles = StyleSheet.create({
   closeBtnText: { fontSize: 15, fontWeight: '800', color: Colors.muted },
   pageTitle: { fontSize: 18, fontWeight: '800', color: Colors.ink },
   photo: { width: '100%', height: 280, borderRadius: Radius.card, backgroundColor: Colors.line },
+  photoOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: Radius.card,
+    backgroundColor: 'rgba(17,18,20,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  photoOverlayText: { color: '#fff', fontWeight: '800', fontSize: 13.5 },
   card: {
     backgroundColor: Colors.card,
     borderRadius: Radius.card,

@@ -16,6 +16,8 @@ import { base64ToBytes, error, json, safeJson } from './http';
 import { computePeriodKey, todayKey } from './period';
 import { computeDHash, findDuplicateHash, recordPhotoHash } from './photo-hash';
 import { checkRateLimit } from './ratelimit';
+import { getActivePersonalBoostMultiplier } from './store';
+import { userHasGumpaPlus } from './subscriptions';
 import { checkTimedChallengeWindow } from './timed-challenges';
 import { creditTokens, getTokenBalance, type CatalogEntry } from './tokens';
 
@@ -175,6 +177,14 @@ export async function handleComplete(request: Request, env: Env): Promise<Respon
   const catalogEntry = challengeId ? await resolveCatalogEntry(env, challengeId) : null;
   if (!challengeId || !catalogEntry) return error('Unknown challenge');
 
+  // Re-checked independently of GET /challenges/custom's listing filter —
+  // that filter is a UX nicety (a non-subscriber never sees the id to begin
+  // with), this is the real enforcement against a client that already has
+  // the id some other way. See docs/gumpa-plus-perks-roadmap.md Phase 4.
+  if (catalogEntry.earlyAccessOnly && !(await userHasGumpaPlus(env, auth.id))) {
+    return error('This task is in early access for Gumpa+ subscribers right now.', 403);
+  }
+
   if (catalogEntry.kind === 'timed') {
     const window = await checkTimedChallengeWindow(env, challengeId);
     if (!window.ok) return error(window.reason, 409);
@@ -182,6 +192,14 @@ export async function handleComplete(request: Request, env: Env): Promise<Respon
 
   const periodKey = catalogEntry.kind === 'timed' ? TIMED_CHALLENGE_PERIOD_KEY : computePeriodKey(catalogEntry.cadence);
   const target = catalogEntry.target ?? 1;
+
+  // A personally-purchased Store boost (server/src/store.ts) multiplies on
+  // top of whatever catalogEntry.tokens already resolved to (which may
+  // itself include a developer-granted challenge-wide boost, see
+  // catalog.ts) — computed once here so the posts.tokens_earned rows below
+  // and the actual credit at the bottom of this function never disagree.
+  const personalMultiplier = await getActivePersonalBoostMultiplier(env, auth.id);
+  const effectiveTokens = Math.round(catalogEntry.tokens * personalMultiplier);
 
   let row = await env.DB.prepare('SELECT * FROM completions WHERE user_id = ? AND challenge_id = ? AND period_key = ?')
     .bind(auth.id, challengeId, periodKey)
@@ -220,7 +238,7 @@ export async function handleComplete(request: Request, env: Env): Promise<Respon
     await env.DB.prepare(
       'INSERT INTO posts (id, user_id, quest_title, quest_desc, photo_key, challenge_id, caption, rating, tokens_earned, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     )
-      .bind(postId, auth.id, catalogEntry.title, catalogEntry.desc, key, challengeId, caption, rating, catalogEntry.tokens, Date.now())
+      .bind(postId, auth.id, catalogEntry.title, catalogEntry.desc, key, challengeId, caption, rating, effectiveTokens, Date.now())
       .run();
 
     const claim = await env.DB.prepare(
@@ -254,7 +272,7 @@ export async function handleComplete(request: Request, env: Env): Promise<Respon
       await env.DB.prepare(
         'INSERT INTO posts (id, user_id, quest_title, quest_desc, photo_key, challenge_id, caption, rating, tokens_earned, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
       )
-        .bind(postId, auth.id, catalogEntry.title, catalogEntry.desc, key, challengeId, caption, rating, catalogEntry.tokens, Date.now())
+        .bind(postId, auth.id, catalogEntry.title, catalogEntry.desc, key, challengeId, caption, rating, effectiveTokens, Date.now())
         .run();
 
       const claim = await env.DB.prepare(
@@ -286,7 +304,7 @@ export async function handleComplete(request: Request, env: Env): Promise<Respon
 
   let tokens: number | undefined;
   if (justCompletedPostId) {
-    tokens = await creditTokens(env, auth.id, catalogEntry.tokens, 'quest_complete', challengeId);
+    tokens = await creditTokens(env, auth.id, effectiveTokens, 'quest_complete', challengeId);
 
     const duelPayoutBalance = await resolveDuelOnCompletion(env, auth.id, challengeId);
     if (duelPayoutBalance !== null) tokens = duelPayoutBalance;

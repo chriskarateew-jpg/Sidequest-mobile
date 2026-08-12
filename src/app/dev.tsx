@@ -196,6 +196,7 @@ export default function DevScreen() {
                 <Text style={styles.rowDesc}>
                   +{challenge.tokens} · {challenge.cadence}
                   {challenge.verify === 'streak' ? ` · streak/${challenge.streakTarget}` : ''}
+                  {challenge.earlyAccess ? ' · Gumpa+ early access' : ''}
                 </Text>
               </Pressable>
               <View style={styles.rowActions}>

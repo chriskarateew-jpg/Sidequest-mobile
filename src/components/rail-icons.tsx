@@ -97,6 +97,17 @@ export function CheckBadgeIcon({ size = 20, color = '#fff' }: IconProps) {
   );
 }
 
+// Failure counterpart to CheckBadgeIcon — same circle, an X instead of a
+// check. Used by SubmissionResultModal's "Not submitted" state.
+export function XCircleIcon({ size = 20, color = '#fff' }: IconProps) {
+  return (
+    <Svg viewBox="0 0 24 24" width={size} height={size} fill="none">
+      <Circle cx="12" cy="12" r="8.5" stroke={color} strokeWidth={2} />
+      <Path d="M9 9l6 6M15 9l-6 6" stroke={color} strokeWidth={2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 export function CameraIcon({ size = 20, color = '#fff' }: IconProps) {
   return (
     <Svg viewBox="0 0 24 24" width={size} height={size} fill="none">
@@ -290,6 +301,26 @@ export function DirectionsIcon({ size = 20, color = '#fff' }: IconProps) {
   return (
     <Svg viewBox="0 0 24 24" width={size} height={size} fill="none">
       <Path d="M3 11.5L20 4l-7.5 17-2.2-7.3-7.3-2.2z" stroke={color} strokeWidth={2} strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+// A simple shopping bag — links Profile to the Store screen.
+export function StoreIcon({ size = 20, color = '#fff' }: IconProps) {
+  return (
+    <Svg viewBox="0 0 24 24" width={size} height={size} fill="none">
+      <Path d="M5 8h14l-1.2 11.2a2 2 0 0 1-2 1.8H8.2a2 2 0 0 1-2-1.8L5 8z" stroke={color} strokeWidth={2} strokeLinejoin="round" />
+      <Path d="M8.5 8V6.5a3.5 3.5 0 0 1 7 0V8" stroke={color} strokeWidth={2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+// A lightning bolt — marks a token-earning boost, in the Store catalog and
+// wherever an active personal boost needs a quick visual tag.
+export function BoltIcon({ size = 20, color = '#fff' }: IconProps) {
+  return (
+    <Svg viewBox="0 0 24 24" width={size} height={size} fill="none">
+      <Path d="M13 3L5 13.5h5.5L11 21l8-11h-5.5L13 3z" stroke={color} strokeWidth={2} strokeLinejoin="round" />
     </Svg>
   );
 }

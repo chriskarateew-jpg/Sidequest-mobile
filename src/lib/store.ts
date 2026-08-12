@@ -109,6 +109,10 @@ function dayKey(d = new Date()) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+function daysAgo(n: number): string {
+  return dayKey(new Date(Date.now() - n * 86400000));
+}
+
 function weekKey(d = new Date()) {
   const date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const day = (date.getDay() + 6) % 7;
@@ -332,8 +336,16 @@ function applyReward(s: GumpaStore, c: Challenge) {
   const today = dayKey();
   let streak = s.streak;
   if (s.streak.lastDay !== today) {
-    const yesterday = dayKey(new Date(Date.now() - 86400000));
-    streak = { count: s.streak.lastDay === yesterday ? s.streak.count + 1 : 1, lastDay: today };
+    // Gumpa+ subscribers get a one-day grace (docs/gumpa-plus-perks-roadmap.md
+    // Phase 6): completing something today after skipping exactly one day
+    // still continues the streak instead of resetting to 1. Must stay in
+    // sync with currentStreak's identical window below — that's what
+    // decides whether the streak is still "alive" to display in the first
+    // place, this is what happens the moment a completion lands inside
+    // that window.
+    const hasGumpaPlus = !!useAuthStore.getState().user?.hasGumpaPlus;
+    const continuesStreak = s.streak.lastDay === daysAgo(1) || (hasGumpaPlus && s.streak.lastDay === daysAgo(2));
+    streak = { count: continuesStreak ? s.streak.count + 1 : 1, lastDay: today };
   }
 
   return { tokens, xp, weekly, streak };
@@ -422,10 +434,9 @@ export const useGumpaStore = create<GumpaStore>((set, get) => ({
 
   currentStreak: () => {
     const s = get();
-    const today = dayKey();
-    const yesterday = dayKey(new Date(Date.now() - 86400000));
-    if (s.streak.lastDay === today || s.streak.lastDay === yesterday) return s.streak.count;
-    return 0;
+    const hasGumpaPlus = !!useAuthStore.getState().user?.hasGumpaPlus;
+    const alive = s.streak.lastDay === dayKey() || s.streak.lastDay === daysAgo(1) || (hasGumpaPlus && s.streak.lastDay === daysAgo(2));
+    return alive ? s.streak.count : 0;
   },
 
   syncTokens: (tokens) => {

@@ -102,6 +102,7 @@ Screenshots land in `.claude/skills/run-gumpa-mobile/screenshots/`
 |---|---|
 | `launch` | Opens headless Chromium + one page (420×900 viewport), wires up console/pageerror capture. Always first. |
 | `seed-local` | Injects a fake local/destination-tied task (with `bgImage`) into `localStorage` under `gumpa_state_v1`, via `addInitScript` so it's there before the app's own `hydrate()` runs. **Must come before `nav`** — seeding after the app has already mounted does nothing. Use this to see a local-task card without real GPS (geolocation isn't available headlessly). |
+| `seed-streak <count> <daysAgo>` | Seeds just `gumpa_state_v1`'s `streak: {count, lastDay}`, with `lastDay` computed as `<daysAgo>` days before now in local time. Same `addInitScript`-before-`nav` constraint as `seed-local`. For testing streak display/grace-day logic (`currentStreak` in `src/lib/store.ts`) without waiting real days to pass — e.g. `seed-streak 5 2` simulates a 5-day streak whose last completion was 2 days ago. |
 | `nav <url>` | Full page load. **Only safe once, as the very first navigation.** See Gotchas — a second `nav` after auth logs you out. |
 | `signup [user] [email] [pass]` | Clicks through to the signup form and submits. Args are optional — auto-generates a unique throwaway identity if omitted. Lands logged in (no email-verification gate blocks access). |
 | `login <identifier> <password>` | Fills and submits the login form directly, for a pre-existing test account. |
@@ -140,7 +141,23 @@ No test suite configured in this project yet (no `test` script in
   screen, not just its own card — a `click-tab Tasks` attempted while it's
   up fails after 30s with `<div>… subtree intercepts pointer events`, which
   reads like a targeting bug but is actually just an unhandled modal.
-  Always run `dismiss-location-modal` right after `signup`/`login`.
+  Always run `dismiss-location-modal` right after `signup`/`login`. It can
+  still show up empty (`no location-onboarding modal present`) if it
+  fires immediately after — the modal renders asynchronously and can lose
+  a race against `login`'s fixed post-submit wait. If a later click in the
+  same script hits the same "subtree intercepts pointer events" error, add
+  a `wait 1000`–`1500` before `dismiss-location-modal` rather than assuming
+  the modal isn't the cause.
+- **A `Pressable` wrapped in a continuous `reanimated` pulse (e.g. a
+  `withRepeat(withTiming(...))` scale loop) is not a reliable `click`
+  target.** Playwright's actionability check waits for the element's
+  bounding box to stop moving before clicking, which a looping scale
+  animation never does — the click fails with `element is not stable`
+  after the full retry window, even though a real tap works fine (the
+  animation is cosmetic, native touch doesn't care). Target a nearby
+  static element instead if one exists (e.g. `rewards.tsx`'s pulsing
+  "Unlocks with Gumpa+" pill vs. its non-animated per-brand "G+" badges,
+  which open the same modal).
 - **`expo-secure-store`'s web shim does not survive a hard page reload.**
   The auth token is lost on a second `nav`/`page.goto` — you land back on
   the login screen with no error. This is a real product-relevant finding,

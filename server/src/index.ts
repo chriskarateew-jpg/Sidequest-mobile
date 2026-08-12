@@ -38,7 +38,9 @@ import { handleCreateGroup, handleGetGroup, handleJoinGroup, handleListMyGroups 
 import { CORS_HEADERS, error } from './http';
 import { handleGetLocalChallenges } from './local-challenges';
 import { handleCreatePot, handleGetPot, handleJoinPot, handleListGroupPots } from './pots';
-import { handleRewardsInterest } from './rewards';
+import { handleRedeemReward, handleRewardsInterest } from './rewards';
+import { handleListStoreCatalog } from './store';
+import { handleRevenueCatWebhook } from './subscriptions';
 import {
   handleAdminCreateTimedChallenge,
   handleAdminDeleteTimedChallenge,
@@ -105,6 +107,9 @@ export default {
 
     if (method === 'GET' && pathname === '/tokens/me') return handleGetBalance(request, env);
     if (method === 'POST' && pathname === '/rewards/interest') return handleRewardsInterest(request, env);
+    if (method === 'POST' && pathname === '/rewards/redeem') return handleRedeemReward(request, env);
+    if (method === 'POST' && pathname === '/webhooks/revenuecat') return handleRevenueCatWebhook(request, env);
+    if (method === 'GET' && pathname === '/store/catalog') return handleListStoreCatalog(request, env);
     if (method === 'GET' && pathname === '/local-challenges') return handleGetLocalChallenges(request, env);
     if (method === 'GET' && pathname === '/challenges/custom') return handleListCustomChallenges(request, env);
     if (method === 'GET' && pathname === '/boosts/active') return handleListActiveBoosts(request, env);

@@ -72,6 +72,7 @@ export default function DevChallengeFormScreen() {
   const [verifiabilityNotes, setVerifiabilityNotes] = useState(existing?.verifiabilityNotes ?? '');
   const [checklist, setChecklist] = useState<GuideChecklist>(existing?.guideChecklist ?? EMPTY_CHECKLIST);
   const [active, setActive] = useState(existing?.active ?? true);
+  const [earlyAccess, setEarlyAccess] = useState(existing?.earlyAccess ?? false);
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -105,6 +106,7 @@ export default function DevChallengeFormScreen() {
       ...(proofReject.trim() ? { proofReject: proofReject.trim() } : {}),
       ...(verifiabilityNotes.trim() ? { verifiabilityNotes: verifiabilityNotes.trim() } : {}),
       guideChecklist: checklist,
+      earlyAccess,
     };
     const result = existing ? await updateAdminChallenge(token, existing.id, input) : await createAdminChallenge(token, { ...input, active });
     if (!result.ok) {
@@ -166,6 +168,11 @@ export default function DevChallengeFormScreen() {
         <View style={styles.activeRow}>
           <Text style={styles.label}>Active (shows in rotation)</Text>
           <Switch value={active} onValueChange={setActive} trackColor={{ true: Colors.accent, false: Colors.line }} />
+        </View>
+
+        <View style={styles.activeRow}>
+          <Text style={styles.label}>Early access (Gumpa+ only, until you push it to everyone)</Text>
+          <Switch value={earlyAccess} onValueChange={setEarlyAccess} trackColor={{ true: Colors.accent, false: Colors.line }} />
         </View>
       </View>
 

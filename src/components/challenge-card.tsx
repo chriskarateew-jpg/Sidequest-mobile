@@ -6,8 +6,10 @@ import { useState } from 'react';
 
 import { LocalBarrierBorder } from '@/components/local-barrier';
 import { LocationDetailModal } from '@/components/location-detail-modal';
-import { CameraIcon, CoinIcon, MapPinIcon, ScreenshotIcon } from '@/components/rail-icons';
+import { CameraIcon, MapPinIcon, ScreenshotIcon } from '@/components/rail-icons';
 import { ScreenshotPicker } from '@/components/screenshot-picker';
+import { SubmissionResultModal, type SubmissionResult } from '@/components/submission-result-modal';
+import { TokenBadge } from '@/components/token-badge';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useAuthStore } from '@/lib/auth';
 import { reconcileSubmission, submitCompletion } from '@/lib/complete';
@@ -49,9 +51,7 @@ export function RewardPill({ tokens, boostedTokens }: { tokens: number; boostedT
   const boosted = boostedTokens != null && boostedTokens !== tokens;
   return (
     <View style={badgeStyles.rewardPill}>
-      <CoinIcon size={15} color={Colors.goldText} />
-      {boosted && <Text style={badgeStyles.rewardTextStruck}>+{tokens}</Text>}
-      <Text style={badgeStyles.rewardText}>+{boosted ? boostedTokens : tokens}</Text>
+      <TokenBadge value={`+${boosted ? boostedTokens : tokens}`} strikeValue={boosted ? `+${tokens}` : undefined} size="sm" />
     </View>
   );
 }
@@ -75,17 +75,6 @@ const badgeStyles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
-  rewardText: { fontWeight: '800', color: Colors.goldText, fontSize: 16 },
-  // Same font size as rewardText — the crossed-out original never shrinks,
-  // it just sits alongside the new amount as its own piece of text, muted
-  // so the eye still lands on the current (boosted) number first.
-  rewardTextStruck: {
-    fontWeight: '800',
-    fontSize: 16,
-    color: Colors.goldText,
-    opacity: 0.45,
-    textDecorationLine: 'line-through',
-  },
 });
 
 export function ChallengeCard({ challenge }: { challenge: Challenge }) {
@@ -102,12 +91,86 @@ export function ChallengeCard({ challenge }: { challenge: Challenge }) {
   const [stage, setStage] = useState<Stage>('idle');
   const [screenshotPickerVisible, setScreenshotPickerVisible] = useState(false);
   const [detailVisible, setDetailVisible] = useState(false);
+  const [result, setResult] = useState<SubmissionResult | null>(null);
 
   const done = completion?.status === 'complete';
   const busy = stage !== 'idle';
   // The outline/glow marks any real-place challenge, whether or not a city
   // photo happened to be fetched for it — bgImage is a bonus, not the signal.
   const isLocal = !!challenge.isLocal;
+
+  // Runs /verify on a photo and, on a match, either hands off to the review
+  // screen or (in-progress streak check-in) commits it right away. On any
+  // failure — no-match, a verify error, or a rejected in-progress check-in —
+  // it surfaces the "Not submitted" popup; Try Again (see
+  // handleTryAgainVerify below) re-opens capture for a fresh photo rather
+  // than resending these same bytes, since a duplicate-photo or GPS-mismatch
+  // rejection would just fail identically again on the exact same shot.
+  const verifyAndProceed = async (photo: ResolvedPhoto) => {
+    const verdict = await verifyPhoto({
+      token: authToken!,
+      photoBase64: photo.base64,
+      mediaType: photo.mediaType,
+      challengeId: challenge.id,
+    });
+
+    if (verdict.status === 'no-match') {
+      setResult({ status: 'not-submitted', reason: verdict.reason });
+      return;
+    }
+    if (verdict.status === 'error') {
+      setResult({ status: 'not-submitted', reason: "Couldn't verify that photo. Check your connection and try again." });
+      return;
+    }
+
+    // A streak check-in that finishes the streak (or any non-streak
+    // challenge, which always completes in one shot) hands off to the
+    // review screen instead of posting immediately — the user gets a
+    // chance to add a description and star rating and see the photo
+    // before it's final. A streak check-in that's still in progress has
+    // no post/coins/review involved yet, so it still commits right away.
+    const willComplete = challenge.verify !== 'streak' || (completion?.progress ?? 0) + 1 >= (challenge.streakTarget ?? Infinity);
+    if (willComplete) {
+      useDraftSubmissionStore.getState().setPending({
+        challenge,
+        photoUri: photo.uri,
+        photoBase64: photo.base64,
+        mediaType: photo.mediaType,
+        photoProof: verdict.photoProof,
+        hashThumbnailBase64: photo.hashThumbnailBase64,
+        lat: photo.lat,
+        lng: photo.lng,
+      });
+      router.push('/submit-review');
+      return;
+    }
+
+    setStage('submitting');
+    const streakResult = logStreakPhoto(challenge.id, photo.uri);
+    if (!streakResult) {
+      show('Already logged today. Come back tomorrow.');
+      return;
+    }
+    show(`Logged! ${streakResult.progress}/${streakResult.target} ${CADENCE_LABEL[streakResult.challenge.cadence].toLowerCase()} 🔥`);
+    const outcome = await reconcileSubmission(challenge, () =>
+      submitCompletion({
+        token: authToken!,
+        challengeId: challenge.id,
+        photoBase64: photo.base64,
+        mediaType: photo.mediaType,
+        photoProof: verdict.photoProof,
+        hashThumbnailBase64: photo.hashThumbnailBase64,
+        lat: photo.lat,
+        lng: photo.lng,
+      })
+    );
+    // A deliberate server-side refusal (duplicate photo, location mismatch) —
+    // reconcileSubmission above already rolled back whatever was applied
+    // optimistically to the server's authoritative state.
+    if (outcome.status === 'rejected') {
+      setResult({ status: 'not-submitted', reason: outcome.reason });
+    }
+  };
 
   // Every challenge is photo-verified — 'streak' just spreads that across
   // several check-ins (one per calendar day) instead of completing outright.
@@ -120,73 +183,27 @@ export function ChallengeCard({ challenge }: { challenge: Challenge }) {
         show('Log in to submit photo proof.');
         return;
       }
-
       setStage('verifying');
-      const verdict = await verifyPhoto({
-        token: authToken,
-        photoBase64: photo.base64,
-        mediaType: photo.mediaType,
-        challengeId: challenge.id,
-      });
-
-      if (verdict.status === 'no-match') {
-        show(`❌ ${verdict.reason}`);
-        return;
-      }
-      if (verdict.status === 'error') {
-        show("Couldn't verify that photo. Check your connection and try again.");
-        return;
-      }
-
-      // A streak check-in that finishes the streak (or any non-streak
-      // challenge, which always completes in one shot) hands off to the
-      // review screen instead of posting immediately — the user gets a
-      // chance to add a description and star rating and see the photo
-      // before it's final. A streak check-in that's still in progress has
-      // no post/coins/review involved yet, so it still commits right away.
-      const willComplete = challenge.verify !== 'streak' || (completion?.progress ?? 0) + 1 >= (challenge.streakTarget ?? Infinity);
-      if (willComplete) {
-        useDraftSubmissionStore.getState().setPending({
-          challenge,
-          photoUri: photo.uri,
-          photoBase64: photo.base64,
-          mediaType: photo.mediaType,
-          photoProof: verdict.photoProof,
-          hashThumbnailBase64: photo.hashThumbnailBase64,
-          lat: photo.lat,
-          lng: photo.lng,
-        });
-        router.push('/submit-review');
-        return;
-      }
-
-      setStage('submitting');
-      const result = logStreakPhoto(challenge.id, photo.uri);
-      if (!result) {
-        show('Already logged today. Come back tomorrow.');
-        return;
-      }
-      show(`Logged! ${result.progress}/${result.target} ${CADENCE_LABEL[result.challenge.cadence].toLowerCase()} 🔥`);
-      const outcome = await reconcileSubmission(challenge, () =>
-        submitCompletion({
-          token: authToken,
-          challengeId: challenge.id,
-          photoBase64: photo.base64,
-          mediaType: photo.mediaType,
-          photoProof: verdict.photoProof,
-          hashThumbnailBase64: photo.hashThumbnailBase64,
-          lat: photo.lat,
-          lng: photo.lng,
-        })
-      );
-      // A deliberate server-side refusal (duplicate photo, location mismatch) —
-      // reconcileSubmission above already rolled back whatever was applied
-      // optimistically to the server's authoritative state; surface why so
-      // it doesn't look like the tap just silently did nothing.
-      if (outcome.status === 'rejected') show(`❌ ${outcome.reason}`);
+      await verifyAndProceed(photo);
     } finally {
       setStage('idle');
     }
+  };
+
+  // Re-prompts for a brand new photo/screenshot rather than resubmitting the
+  // one that just failed — screenshot-only tasks reopen the picker,
+  // everything else (camera or either) reopens the live camera.
+  const handleTryAgainVerify = () => {
+    setResult(null);
+    if (challenge.proofType === 'screenshot') {
+      setScreenshotPickerVisible(true);
+    } else {
+      handleCameraCapture();
+    }
+  };
+
+  const handleExitResult = () => {
+    setResult(null);
   };
 
   const handleCameraCapture = async () => {
@@ -328,6 +345,7 @@ export function ChallengeCard({ challenge }: { challenge: Challenge }) {
     </View>
     <ScreenshotPicker visible={screenshotPickerVisible} onClose={() => setScreenshotPickerVisible(false)} onSelect={handleScreenshotSelect} />
     {isLocal && <LocationDetailModal challenge={detailVisible ? challenge : null} onClose={() => setDetailVisible(false)} />}
+    <SubmissionResultModal result={result} onPost={handleExitResult} onTryAgain={handleTryAgainVerify} onExit={handleExitResult} />
     </>
   );
 }

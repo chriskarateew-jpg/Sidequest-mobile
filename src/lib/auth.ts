@@ -15,6 +15,10 @@ export interface AuthUser {
   isPublic: boolean;
   emailVerified: boolean;
   avatarKey: string | null;
+  // Cosmetic-only (see docs/gumpa-plus-perks-roadmap.md Phase 2) — a badge,
+  // nothing gated on money or tokens reads this client flag directly (the
+  // real redemption/Store endpoints re-check has_gumpa_plus server-side).
+  hasGumpaPlus: boolean;
 }
 
 interface AuthState {

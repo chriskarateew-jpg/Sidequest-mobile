@@ -15,6 +15,7 @@ import { hashToken, signToken } from './crypto';
 import type { Env } from './env';
 import { error, json, safeJson } from './http';
 import { checkRateLimit } from './ratelimit';
+import { userHasGumpaPlus } from './subscriptions';
 import { checkTimedChallengeWindow } from './timed-challenges';
 
 const MODEL = 'claude-haiku-4-5-20251001';
@@ -38,6 +39,14 @@ export async function handleVerify(request: Request, env: Env): Promise<Response
 
   const catalogEntry = await resolveCatalogEntry(env, challengeId);
   if (!catalogEntry) return error('Unknown challenge');
+
+  // Checked before spending a real Anthropic call — a non-subscriber
+  // couldn't complete this anyway (complete.ts re-checks independently), so
+  // there's no reason to pay for verification on a submission that can
+  // never be claimed. See docs/gumpa-plus-perks-roadmap.md Phase 4.
+  if (catalogEntry.earlyAccessOnly && !(await userHasGumpaPlus(env, auth.id))) {
+    return error('This task is in early access for Gumpa+ subscribers right now.', 403);
+  }
 
   if (catalogEntry.kind === 'timed') {
     // Blocks minting a fresh proof token for something already past its

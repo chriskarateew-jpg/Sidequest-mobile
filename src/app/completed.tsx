@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BackButton } from '@/components/back-button';
 import { TrashIcon } from '@/components/rail-icons';
 import { StarRating } from '@/components/star-rating';
+import { TokenBadge } from '@/components/token-badge';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { photoUrl } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
@@ -118,7 +119,7 @@ function CompletedPostCard({ post, onDelete }: { post: MyPost; onDelete: () => v
           <Text style={[styles.title, styles.titleFlex]}>{post.questTitle}</Text>
           {typeof post.tokensEarned === 'number' && (
             <View style={styles.rewardPill}>
-              <Text style={styles.rewardText}>+{post.tokensEarned} 🪙</Text>
+              <TokenBadge value={`+${post.tokensEarned}`} size="sm" />
             </View>
           )}
         </View>
@@ -156,7 +157,6 @@ const styles = StyleSheet.create({
   caption: { fontSize: 13.5, color: Colors.ink, fontStyle: 'italic', lineHeight: 18 },
   date: { fontSize: 12, color: Colors.muted, fontWeight: '700' },
   rewardPill: { backgroundColor: Colors.goldSoft, borderRadius: Radius.pill, paddingHorizontal: 12, paddingVertical: 6 },
-  rewardText: { fontWeight: '800', color: Colors.goldText, fontSize: 13 },
   empty: { textAlign: 'center', color: Colors.muted, paddingVertical: 40 },
   footerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 },
   deleteBtn: { padding: 4, borderRadius: Radius.sm },

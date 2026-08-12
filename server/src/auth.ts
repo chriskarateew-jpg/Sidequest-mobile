@@ -13,6 +13,7 @@ interface UserRow {
   is_public: number;
   email_verified: number;
   avatar_key: string | null;
+  has_gumpa_plus: number;
 }
 
 interface TokenRow {
@@ -25,7 +26,9 @@ interface TokenRow {
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
 const RESET_TOKEN_RE = /^[0-9a-f]{48}$/;
 
-function userSummary(row: Pick<UserRow, 'id' | 'username' | 'email' | 'is_public' | 'email_verified' | 'avatar_key'>) {
+function userSummary(
+  row: Pick<UserRow, 'id' | 'username' | 'email' | 'is_public' | 'email_verified' | 'avatar_key' | 'has_gumpa_plus'>
+) {
   return {
     id: row.id,
     username: row.username,
@@ -33,6 +36,12 @@ function userSummary(row: Pick<UserRow, 'id' | 'username' | 'email' | 'is_public
     isPublic: !!row.is_public,
     emailVerified: !!row.email_verified,
     avatarKey: row.avatar_key,
+    // Cosmetic-only client flag (see docs/gumpa-plus-perks-roadmap.md Phase
+    // 2) — written only by the RevenueCat webhook (subscriptions.ts), never
+    // trusted from the client. Nothing gated on this needs re-verification
+    // server-side the way /rewards/redeem does, since there's no money or
+    // tokens involved, just a badge.
+    hasGumpaPlus: !!row.has_gumpa_plus,
   };
 }
 
@@ -84,7 +93,10 @@ export async function handleSignup(request: Request, env: Env): Promise<Response
   await issueAndSendVerification(env, request, id, email);
 
   const token = await signToken({ sub: id, username }, env.JWT_SECRET);
-  return json({ token, user: { id, username, email, isPublic: false, emailVerified: false, avatarKey: null } });
+  return json({
+    token,
+    user: { id, username, email, isPublic: false, emailVerified: false, avatarKey: null, hasGumpaPlus: false },
+  });
 }
 
 export async function handleLogin(request: Request, env: Env): Promise<Response> {
@@ -117,9 +129,11 @@ export async function handleMe(request: Request, env: Env): Promise<Response> {
   const auth = await requireAuth(request, env);
   if (!auth) return error('Not authenticated', 401);
 
-  const row = await env.DB.prepare('SELECT id, username, email, is_public, email_verified, avatar_key FROM users WHERE id = ?')
+  const row = await env.DB.prepare(
+    'SELECT id, username, email, is_public, email_verified, avatar_key, has_gumpa_plus FROM users WHERE id = ?'
+  )
     .bind(auth.id)
-    .first<Pick<UserRow, 'id' | 'username' | 'email' | 'is_public' | 'email_verified' | 'avatar_key'>>();
+    .first<Pick<UserRow, 'id' | 'username' | 'email' | 'is_public' | 'email_verified' | 'avatar_key' | 'has_gumpa_plus'>>();
   if (!row) return error('User not found', 404);
 
   return json({ user: userSummary(row) });

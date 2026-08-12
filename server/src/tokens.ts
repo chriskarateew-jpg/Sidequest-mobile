@@ -42,6 +42,13 @@ export interface CatalogEntry {
   // template, never a standalone prompt. Never set for a static/local entry.
   proofAccept?: string;
   proofReject?: string;
+  // Set only for a developer-authored entry with early_access = 1 (see
+  // dev-challenges.ts) — checked independently by both verify.ts and
+  // complete.ts against the requester's has_gumpa_plus, since
+  // GET /challenges/custom filtering it out of the suggestion list is a UX
+  // nicety, not the real enforcement (docs/gumpa-plus-perks-roadmap.md
+  // Phase 4). Never set for a static/local/timed entry.
+  earlyAccessOnly?: boolean;
 }
 
 // Formerly held the 40 static tasks that now live in dev_challenges (see
@@ -71,7 +78,8 @@ export type LedgerReason =
   | 'pot_refund'
   | 'duel_stake'
   | 'duel_payout'
-  | 'duel_refund';
+  | 'duel_refund'
+  | 'reward_redeem';
 
 // Credits always succeed. Returns the new balance.
 export async function creditTokens(env: Env, userId: string, amount: number, reason: LedgerReason, refId?: string): Promise<number> {

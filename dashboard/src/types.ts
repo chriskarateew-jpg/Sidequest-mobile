@@ -41,6 +41,9 @@ export interface AdminChallenge {
   verifiabilityNotes: string | null;
   guideChecklist: GuideChecklist | null;
   active: boolean;
+  // Developer-controlled Gumpa+ gate — a plain toggle, not a timestamp. See
+  // server/src/dev-challenges.ts's DevChallengeRow comment on early_access.
+  earlyAccess: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -64,4 +67,6 @@ export interface AdminChallengeInput {
   // behavior. Update never sends this; active is toggled separately via the
   // bare {active} PATCH, same as the Expo dev panel does.
   active?: boolean;
+  // Unlike active, sent as part of the normal create/update body.
+  earlyAccess?: boolean;
 }
