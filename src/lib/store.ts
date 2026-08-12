@@ -15,7 +15,15 @@ import { fetchLocalChallenges } from '@/lib/local-challenges';
 import { fetchTimedChallenges, type TimedChallenge } from '@/lib/timed-challenges';
 
 const STORAGE_KEY = 'gumpa_state_v1';
-const LOCAL_CHALLENGES_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+// Purely a throttle on how often we re-read GPS and hit the network on
+// rapid tab re-focus (see quests.tsx's useFocusEffect) — NOT a freshness
+// window for the task list itself. That freshness question is already
+// correctly owned server-side by local-challenges.ts's own 7-day region
+// cache (same region -> same cached batch for everyone, regardless of how
+// often a client asks). A short client-side value here is what lets the
+// app actually notice a user has traveled to a new region promptly instead
+// of waiting up to a week to re-check location.
+const LOCAL_CHALLENGES_TTL_MS = 30 * 60 * 1000;
 // Much shorter than local challenges' TTL — these have no location
 // dependency to justify caching hard, and a developer editing a challenge or
 // starting a boost should show up for everyone else quickly, not after a
@@ -159,14 +167,31 @@ function seededShuffle<T>(arr: T[], seedStr: string): T[] {
 // local candidates shows only real venues. Applies identically to every
 // cadence — daily naturally behaves as pure static-shuffle today since no
 // daily-cadence local challenges exist.
+//
+// The local portion is ranked by a stable per-item score, not shuffled —
+// server/src/local-challenges.ts now matches local challenges to a user by
+// distance against a shared venue pool (not one identical batch per grid
+// cell), so two nearby users can legitimately end up with differently
+// shaped `extra` arrays that still both contain the *same* converged
+// challenge id. A Fisher-Yates shuffle's result depends on the whole
+// array's length and each item's starting index, so it could easily place
+// that shared id inside the top-`count` slice for one user and drop it for
+// the other — defeating the server's convergence guarantee before the user
+// ever sees it. Scoring each item purely by its own id (never by its
+// position or the array it happens to be in) ranks it identically for
+// every user who has it, independent of what else is in their array.
 function pickSuggestions(cadence: Cadence, count: number, extra: Challenge[], custom: Challenge[]): Challenge[] {
   const localForCadence = extra.filter((c) => c.cadence === cadence);
   const staticPool = [...CHALLENGES, ...custom].filter((c) => c.cadence === cadence);
 
-  const shuffledLocal = seededShuffle(localForCadence, cadence + ':local:' + periodKeyFor(cadence));
-  const shuffledStatic = seededShuffle(staticPool, cadence + ':' + periodKeyFor(cadence));
+  const period = periodKeyFor(cadence);
+  const rankedLocal = localForCadence
+    .map((c) => ({ c, score: hashStr(c.id + ':' + period) }))
+    .sort((a, b) => b.score - a.score)
+    .map((s) => s.c);
+  const shuffledStatic = seededShuffle(staticPool, cadence + ':' + period);
 
-  const picked = shuffledLocal.slice(0, count);
+  const picked = rankedLocal.slice(0, count);
   if (picked.length < count) picked.push(...shuffledStatic.slice(0, count - picked.length));
   return picked;
 }

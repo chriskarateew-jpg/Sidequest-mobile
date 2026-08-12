@@ -98,11 +98,6 @@ function parseGuideChecklist(raw: string | null): GuideChecklist | null {
   }
 }
 
-function isGuideChecklistComplete(raw: string | null): boolean {
-  const parsed = parseGuideChecklist(raw);
-  return !!parsed && GUIDE_CHECKLIST_KEYS.every((key) => parsed[key] === true);
-}
-
 function toAdminShape(row: DevChallengeRow) {
   return {
     id: row.id,
@@ -248,16 +243,11 @@ export async function handleAdminCreateChallenge(request: Request, env: Env): Pr
   const parsed = parseChallengeBody(body);
   if (parsed instanceof Response) return parsed;
 
-  // Mechanical proxy for "the five-test guide was actually applied" (decision
-  // 4 — the underlying judgment stays human, but publishing requires the
-  // checklist to say so). Defaults to true to match the pre-Phase-4 behavior
-  // of every create being immediately active when no guideChecklist is sent.
+  // Publishing no longer requires the guide checklist to be complete — the
+  // developer authors and reviews tasks directly now, testing them in the
+  // app before publishing. guideChecklist is still stored (see toAdminShape)
+  // as an optional self-review aid, not a save-blocking gate.
   const requestedActive = body.active !== false;
-  if (requestedActive && !isGuideChecklistComplete(parsed.guideChecklist)) {
-    return error(
-      'All five guide_checklist items must be true before a task can be published (active). Send active: false to save it as a draft instead.'
-    );
-  }
 
   const id = crypto.randomUUID();
   const now = Date.now();
@@ -305,9 +295,6 @@ export async function handleAdminUpdateChallenge(request: Request, env: Env, id:
   // A bare {"active": false} toggle doesn't need every other field re-sent.
   let warnings: string[] = [];
   if (Object.keys(body).length === 1 && typeof body.active === 'boolean') {
-    if (body.active && !isGuideChecklistComplete(existing.guide_checklist)) {
-      return error('All five guide_checklist items must be true before this task can be published (active).');
-    }
     await env.DB.prepare('UPDATE dev_challenges SET active = ?, updated_at = ? WHERE id = ?')
       .bind(body.active ? 1 : 0, Date.now(), id)
       .run();

@@ -246,10 +246,10 @@ export function TaskForm({
         </div>
       </div>
 
-      <h2>Guide checklist</h2>
+      <h2>Guide checklist (optional)</h2>
       <p className="muted" style={{ marginTop: -8 }}>
-        All five must be checked before this task can be set active — see docs/challenge-writing-guide.md. You can still save a
-        draft with boxes unchecked by leaving "Active" off.
+        A self-review aid, not a requirement — see docs/challenge-writing-guide.md. Checking these boxes has no effect on whether
+        the task can be published.
       </p>
       <div className="card">
         {GUIDE_CHECKLIST_ITEMS.map((item) => (

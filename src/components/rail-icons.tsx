@@ -272,3 +272,24 @@ export function TrashIcon({ size = 20, color = '#fff' }: IconProps) {
     </Svg>
   );
 }
+
+// A map pin — the tap-to-expand affordance on a location-based challenge
+// card (see challenge-card.tsx), opening the detail view for that venue.
+export function MapPinIcon({ size = 20, color = '#fff' }: IconProps) {
+  return (
+    <Svg viewBox="0 0 24 24" width={size} height={size} fill="none">
+      <Path d="M12 21s7-7.58 7-12a7 7 0 0 0-14 0c0 4.42 7 12 7 12z" stroke={color} strokeWidth={2} strokeLinejoin="round" />
+      <Circle cx="12" cy="9" r="2.4" stroke={color} strokeWidth={2} />
+    </Svg>
+  );
+}
+
+// A navigation arrow — the "Get Directions" button in the location detail
+// modal, opening the venue in Apple Maps.
+export function DirectionsIcon({ size = 20, color = '#fff' }: IconProps) {
+  return (
+    <Svg viewBox="0 0 24 24" width={size} height={size} fill="none">
+      <Path d="M3 11.5L20 4l-7.5 17-2.2-7.3-7.3-2.2z" stroke={color} strokeWidth={2} strokeLinejoin="round" />
+    </Svg>
+  );
+}

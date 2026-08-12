@@ -32,6 +32,12 @@ const COMMONS_GEOSEARCH_LIMIT = 10;
 // a whole region — a few hundred meters, not several km — otherwise a
 // "venue photo" is really just the region photo again with extra API calls.
 const VENUE_GEOSEARCH_RADIUS_M = 300;
+// One-shot widen, not a ladder, mirroring the same bounded-retry pattern
+// used for Overpass radii (places.ts) — a small local park often has no
+// Commons photo within 300m of its own coordinates, but usually has one
+// somewhere in the surrounding few blocks. Tried only when the tight
+// search comes up empty, so it costs nothing on the common case.
+const VENUE_GEOSEARCH_WIDE_RADIUS_M = 1500;
 // How far a matched Wikipedia page's own infobox coordinates may sit from
 // the requested point before we reject the match as a probable name
 // collision rather than the actual place — e.g. "Woodstock" on its own
@@ -209,7 +215,7 @@ export async function getVenueImage(env: Env, venueKey: string, lat: number, lng
     return cached.image_url;
   }
 
-  const imageUrl = await fetchCommonsNearbyImage(lat, lng, VENUE_GEOSEARCH_RADIUS_M);
+  const imageUrl = (await fetchCommonsNearbyImage(lat, lng, VENUE_GEOSEARCH_RADIUS_M)) ?? (await fetchCommonsNearbyImage(lat, lng, VENUE_GEOSEARCH_WIDE_RADIUS_M));
 
   await env.DB.prepare('INSERT OR REPLACE INTO venue_images (venue_key, image_url, created_at) VALUES (?, ?, ?)')
     .bind(venueKey, imageUrl, Date.now())

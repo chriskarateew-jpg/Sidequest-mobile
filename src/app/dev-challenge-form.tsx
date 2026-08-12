@@ -200,10 +200,10 @@ export default function DevChallengeFormScreen() {
         />
       </View>
 
-      <Text style={styles.sectionHeader}>Guide checklist</Text>
+      <Text style={styles.sectionHeader}>Guide checklist (optional)</Text>
       <Text style={styles.sectionSubtitle}>
-        All five must be checked before this task can be active — see docs/challenge-writing-guide.md. Turn "Active" off above to save
-        a draft with boxes unchecked.
+        A self-review aid, not a requirement — see docs/challenge-writing-guide.md. Checking these boxes has no effect on whether
+        the task can be published.
       </Text>
       <View style={styles.card}>
         {GUIDE_CHECKLIST_ITEMS.map((item) => (

@@ -25,6 +25,9 @@ export default function QuestsScreen() {
   const markQuestsSeen = useGumpaStore((s) => s.markQuestsSeen);
   const timedChallenges = useGumpaStore((s) => s.timedChallenges);
   const refreshTimedChallenges = useGumpaStore((s) => s.refreshTimedChallenges);
+  const refreshLocalChallenges = useGumpaStore((s) => s.refreshLocalChallenges);
+  const localChallengesFetchedAt = useGumpaStore((s) => s.localChallengesFetchedAt);
+  const locationOptOut = useGumpaStore((s) => s.locationOptOut);
   const [taskFilter, setTaskFilter] = useState<Cadence | 'all'>('all');
 
   // Clears the bottom nav's "New!" badge every time this tab gains focus,
@@ -34,11 +37,27 @@ export default function QuestsScreen() {
   // Also force-refreshes timed Challenges on every focus — their TTL is
   // short (60s, see store.ts) precisely so reopening this tab reliably
   // shows an up-to-date countdown/list rather than waiting on the TTL.
+  // refreshLocalChallenges is NOT force-called (no `true` arg) — its own
+  // short TTL (30min, see store.ts) already re-checks GPS on a normal visit
+  // cadence without hammering location/network on every rapid re-focus. This
+  // is what actually lets a traveling user's tasks catch up to their new
+  // location promptly instead of waiting up to a week (see
+  // docs/location-task-refresh-fix-prompt.md).
+  // Same eligibility guard as the mount-time refresh in _layout.tsx: only
+  // for users who already opted in at least once (localChallengesFetchedAt
+  // !== null) and haven't since opted out. Skipping this guard would be a
+  // real bug, not just an inefficiency — clearLocalArea() (Settings' "Local
+  // tasks" toggle-off) sets localChallengesFetchedAt back to null, and
+  // refreshLocalChallenges's own TTL check only skips when fetchedAt is
+  // non-null, so an unguarded call here would immediately re-fetch location
+  // on the very next tab visit and silently flip locationOptOut back to
+  // false, undoing the user's explicit opt-out.
   useFocusEffect(
     useCallback(() => {
       markQuestsSeen();
       refreshTimedChallenges(true);
-    }, [markQuestsSeen, refreshTimedChallenges])
+      if (localChallengesFetchedAt !== null && !locationOptOut) refreshLocalChallenges();
+    }, [markQuestsSeen, refreshTimedChallenges, refreshLocalChallenges, localChallengesFetchedAt, locationOptOut])
   );
 
   // Belt-and-suspenders on top of the server's own filtering (GET

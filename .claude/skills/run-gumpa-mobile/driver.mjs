@@ -46,6 +46,11 @@ function seedLocalState() {
         tokens: 75,
         title: 'Photograph a cast-iron facade on Greene Street',
         desc: "Document SoHo's ornate 19th-century building fronts and their intricate architectural details up close.",
+        longDesc:
+          "Greene Street has one of the largest concentrations of cast-iron facades left in the city, dating back to the 1870s. Walk the block, look up at the details, and get a photo of one up close as your proof.",
+        placeName: 'Greene Street',
+        lat: 40.7233,
+        lng: -73.9994,
         verify: 'photo',
         proofType: 'camera',
         bgImage: 'https://picsum.photos/seed/soho/1200/800',

@@ -5,7 +5,8 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { useState } from 'react';
 
 import { LocalBarrierBorder } from '@/components/local-barrier';
-import { CameraIcon, CoinIcon, ScreenshotIcon } from '@/components/rail-icons';
+import { LocationDetailModal } from '@/components/location-detail-modal';
+import { CameraIcon, CoinIcon, MapPinIcon, ScreenshotIcon } from '@/components/rail-icons';
 import { ScreenshotPicker } from '@/components/screenshot-picker';
 import { Colors, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useAuthStore } from '@/lib/auth';
@@ -100,6 +101,7 @@ export function ChallengeCard({ challenge }: { challenge: Challenge }) {
   const show = useToastStore((s) => s.show);
   const [stage, setStage] = useState<Stage>('idle');
   const [screenshotPickerVisible, setScreenshotPickerVisible] = useState(false);
+  const [detailVisible, setDetailVisible] = useState(false);
 
   const done = completion?.status === 'complete';
   const busy = stage !== 'idle';
@@ -221,6 +223,11 @@ export function ChallengeCard({ challenge }: { challenge: Challenge }) {
         {isLocal && <LocalBarrierBorder radius={Radius.card} />}
         <View style={styles.header}>
           <Text style={[styles.title, styles.titleFlex, isLocal && styles.titleLocal]}>{challenge.title}</Text>
+          {isLocal && (
+            <Pressable testID="location-detail-button" style={styles.infoBtn} hitSlop={8} onPress={() => setDetailVisible(true)}>
+              <MapPinIcon size={15} color="#fff" />
+            </Pressable>
+          )}
           <CadenceBadge cadence={challenge.cadence} />
         </View>
         <Text style={[styles.desc, isLocal && styles.descLocal]}>{challenge.desc}</Text>
@@ -320,6 +327,7 @@ export function ChallengeCard({ challenge }: { challenge: Challenge }) {
       </View>
     </View>
     <ScreenshotPicker visible={screenshotPickerVisible} onClose={() => setScreenshotPickerVisible(false)} onSelect={handleScreenshotSelect} />
+    {isLocal && <LocationDetailModal challenge={detailVisible ? challenge : null} onClose={() => setDetailVisible(false)} />}
     </>
   );
 }
@@ -356,6 +364,17 @@ const styles = StyleSheet.create({
   title: { fontSize: 16, fontWeight: '800', color: Colors.ink, lineHeight: 21 },
   titleFlex: { flex: 1 },
   titleLocal: { color: '#fff' },
+  // Local-only tap target that opens LocationDetailModal — sits on the dark
+  // scrim/bg-image area every local card already has, so a translucent
+  // white circle reads clearly without needing its own background color.
+  infoBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   desc: { fontSize: 13.5, color: Colors.muted, lineHeight: 19 },
   descLocal: { color: 'rgba(255,255,255,0.85)' },
   progress: { fontSize: 12.5, fontWeight: '800', color: Colors.accent },

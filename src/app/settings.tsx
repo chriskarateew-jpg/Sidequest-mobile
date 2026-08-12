@@ -57,8 +57,14 @@ export default function SettingsScreen() {
   // location entirely) — deliberately not paired with any way to force a
   // fresh batch on demand. Local tasks are meant to nudge you out of your
   // comfort zone; a manual "get me a different one" button would just let
-  // anyone rewind to something easier. The set still rotates on its own via
-  // the background TTL refresh in _layout.tsx.
+  // anyone rewind to something easier. This restraint still holds even
+  // though the set now re-checks location on every Tasks-tab visit
+  // (quests.tsx), not just a weekly background tick: what a user sees is a
+  // deterministic function of (their region's server-cached batch, the
+  // current calendar period), never of when/how often they asked — so
+  // revisiting this tab can't be used to reroll into an easier task, only
+  // to catch up with a real change of location. See
+  // docs/location-task-refresh-fix-prompt.md.
   const handleToggleLocalTasks = async (value: boolean) => {
     if (!value) {
       clearLocalArea();

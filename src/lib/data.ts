@@ -37,6 +37,14 @@ export interface Challenge {
   streakTarget?: number; // instances required within the period; only set when verify === 'streak'
   bgImage?: string; // city skyline/downtown photo — only set on server-generated local challenges
   isLocal?: boolean; // server-generated, tied to a real nearby place (see server/src/local-challenges.ts) — guaranteed a suggestion slot, see pickSuggestions in store.ts
+  // Only set on local challenges (see server/src/local-challenges.ts's
+  // toClientChallenge) — lat/lng feed the detail view's "Get Directions"
+  // link (src/components/location-detail-modal.tsx), never anything
+  // verification-related, that stays entirely server-side.
+  placeName?: string;
+  lat?: number;
+  lng?: number;
+  longDesc?: string;
 }
 
 // Formerly the 40-entry static catalog. Migrated into dev_challenges (see
